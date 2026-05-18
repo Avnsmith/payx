@@ -1,36 +1,40 @@
 import { ethers } from 'ethers';
-import { createWalletClient, createPublicClient, http } from 'viem';
+import { createWalletClient, http } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { hardhat } from 'viem/chains';
 import { createViemAdapterFromPrivateKey } from '@circle-fin/adapter-viem-v2';
 import { AppKit } from '@circle-fin/app-kit';
 
-export const publicClient = createPublicClient({
-  chain: hardhat,
-  transport: http('http://127.0.0.1:8545')
-});
+export const arcTestnet = {
+  id: 984122,
+  name: 'Arc Testnet',
+  network: 'arc-testnet',
+  nativeCurrency: { name: 'Arc', symbol: 'ARC', decimals: 18 },
+  rpcUrls: {
+    default: { http: ['https://testnet.arc.network/rpc'] },
+    public: { http: ['https://testnet.arc.network/rpc'] },
+  },
+  blockExplorers: {
+    default: { name: 'ArcScan', url: 'https://testnet.arcscan.app' },
+  },
+};
 
-const HARDHAT_MNEMONIC = "test test test test test test test test test test test junk";
-
-// Deterministically select one of the 20 pre-funded Hardhat accounts
-const getFundedAccount = (identifier) => {
-  let hash = 0;
-  for (let i = 0; i < identifier.length; i++) {
-    hash = (hash << 5) - hash + identifier.charCodeAt(i);
-    hash = hash & hash;
-  }
-  const index = Math.abs(hash) % 20;
-  const wallet = ethers.HDNodeWallet.fromPhrase(HARDHAT_MNEMONIC, null, "m/44'/60'/0'/0/" + index);
+// Deterministically generate a private key using a hash
+const getWalletForIdentifier = (identifier) => {
+  // Use a simple hash of the identifier to generate a consistent private key
+  const hash = ethers.id(identifier);
+  // Ensure the hash is exactly 32 bytes (64 hex chars)
+  const paddedHash = ethers.zeroPadValue(hash, 32);
+  const wallet = new ethers.Wallet(paddedHash);
   return wallet.privateKey;
 };
 
 export const getWalletFromEmail = (email) => {
-  const privateKey = getFundedAccount(email.toLowerCase());
+  const privateKey = getWalletForIdentifier(email.toLowerCase());
   const account = privateKeyToAccount(privateKey);
   const client = createWalletClient({
     account,
-    chain: hardhat,
-    transport: http('http://127.0.0.1:8545'),
+    chain: arcTestnet,
+    transport: http()
   });
 
   return {
@@ -80,12 +84,12 @@ export const registerPasskeyWallet = async () => {
 
     if (!credential) throw new Error("Passkey creation failed or was cancelled.");
 
-    const privateKey = getFundedAccount(credential.id);
+    const privateKey = getWalletForIdentifier(credential.id);
     const account = privateKeyToAccount(privateKey);
     const client = createWalletClient({
       account,
-      chain: hardhat,
-      transport: http('http://127.0.0.1:8545'),
+      chain: arcTestnet,
+      transport: http()
     });
     
     return {
@@ -120,12 +124,12 @@ export const loginWithPasskey = async () => {
 
     if (!credential) throw new Error("Passkey login failed.");
 
-    const privateKey = getFundedAccount(credential.id);
+    const privateKey = getWalletForIdentifier(credential.id);
     const account = privateKeyToAccount(privateKey);
     const client = createWalletClient({
       account,
-      chain: hardhat,
-      transport: http('http://127.0.0.1:8545'),
+      chain: arcTestnet,
+      transport: http()
     });
     
     return {
@@ -143,12 +147,13 @@ export const loginWithPasskey = async () => {
 };
 
 export const initAppKit = (walletData) => {
-  // Initialize Circle AppKit using the local Hardhat chain
+  // Initialize Circle AppKit
   const adapter = createViemAdapterFromPrivateKey({ 
     privateKey: walletData.privateKey,
-    chain: hardhat
+    chain: arcTestnet
   });
   
+  // Dummy initialization to satisfy SDK requirements without a real kitKey
   const kit = new AppKit();
   
   return { kit, adapter };

@@ -1,13 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { LogOut, Send, QrCode, Wallet, Users } from 'lucide-react';
 import SendModal from './SendModal';
 import ReceiveModal from './ReceiveModal';
-import { getWalletFromEmail, publicClient } from '../utils/wallet';
-import { USDC_ADDRESS, USDC_ABI } from '../utils/contracts';
+import { getWalletFromEmail } from '../utils/wallet';
+import { addTransaction } from '../utils/db';
 import { History as HistoryIcon } from 'lucide-react';
-import { parseUnits } from 'viem';
 
-const Dashboard = ({ wallet, appKit, balance, refreshBalance, onLogout, onNavigate }) => {
+const Dashboard = ({ wallet, appKit, balance, setBalance, onLogout, onNavigate }) => {
   const [showSendModal, setShowSendModal] = useState(false);
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   
@@ -19,46 +18,44 @@ const Dashboard = ({ wallet, appKit, balance, refreshBalance, onLogout, onNaviga
     ];
   });
 
-  const handleSend = async (to, amount) => {
-    let targetAddress = to.trim();
-    
-    // Check if input is an email, if so derive address deterministically
-    if (/^\S+@\S+\.\S+$/.test(targetAddress)) {
-      targetAddress = getWalletFromEmail(targetAddress).address;
-    } else if (!/^0x[a-fA-F0-9]{40}$/.test(targetAddress)) {
-      alert('Please enter a valid 0x address or email address.');
-      return false;
-    }
-
-    try {
-      const amountUnits = parseUnits(amount.toString(), 6);
+  const handleSend = (to, amount) => {
+    return new Promise((resolve) => {
+      let targetAddress = to.trim();
       
-      const { request } = await publicClient.simulateContract({
-        address: USDC_ADDRESS,
-        abi: USDC_ABI,
-        functionName: 'transfer',
-        args: [targetAddress, amountUnits],
-        account: wallet.account
-      });
+      // If input is an email, generate deterministic address
+      if (/^\S+@\S+\.\S+$/.test(targetAddress)) {
+        targetAddress = getWalletFromEmail(targetAddress).address;
+      } else if (!/^0x[a-fA-F0-9]{40}$/.test(targetAddress)) {
+        alert('Please enter a valid 0x address or email address.');
+        resolve(false);
+        return;
+      }
 
-      const hash = await wallet.client.writeContract(request);
-      console.log("Transaction Hash:", hash);
+      const currentBalance = parseFloat(balance);
+      const sendAmount = parseFloat(amount);
       
-      // Wait for confirmation
-      await publicClient.waitForTransactionReceipt({ hash });
-      
-      // Add local history reference since indexing takes time on real nets
-      const txs = JSON.parse(localStorage.getItem('payx_real_txs') || '[]');
-      txs.unshift({ id: hash, type: 'send', amount, to: targetAddress, timestamp: new Date().toISOString(), from: wallet.address });
-      localStorage.setItem('payx_real_txs', JSON.stringify(txs));
+      if (sendAmount > currentBalance) {
+        alert("Insufficient mock balance!");
+        resolve(false);
+        return;
+      }
 
-      refreshBalance();
-      return true;
-    } catch (err) {
-      console.error("Send failed:", err);
-      alert("Failed to send transaction: " + err.message);
-      return false;
-    }
+      // Simulate network delay for sending
+      setTimeout(() => {
+        const newBalance = (currentBalance - sendAmount).toFixed(2);
+        setBalance(newBalance);
+
+        addTransaction({
+          accountId: wallet.accountId,
+          type: 'send',
+          amount: sendAmount.toFixed(2),
+          to: targetAddress,
+          status: 'completed'
+        });
+
+        resolve(true);
+      }, 1500);
+    });
   };
 
   return (
@@ -87,7 +84,7 @@ const Dashboard = ({ wallet, appKit, balance, refreshBalance, onLogout, onNaviga
           <span className="balance-currency">USDC</span>
           {balance}
         </div>
-        <div className="text-sm text-muted">Local Hardhat • {wallet.address.slice(0,6)}...{wallet.address.slice(-4)}</div>
+        <div className="text-sm text-muted">Arc Network • {wallet.address.slice(0,6)}...{wallet.address.slice(-4)}</div>
       </div>
 
       <div className="action-buttons">

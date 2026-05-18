@@ -1,42 +1,31 @@
 import React, { useState } from 'react';
 import { Droplet, ArrowLeft, Loader2, CheckCircle2 } from 'lucide-react';
-import { publicClient } from '../utils/wallet';
-import { FAUCET_ADDRESS, FAUCET_ABI } from '../utils/contracts';
+import { addTransaction } from '../utils/db';
 
-const Faucet = ({ wallet, balance, refreshBalance, onBack }) => {
+const Faucet = ({ wallet, balance, setBalance, onBack }) => {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  const handleClaim = async () => {
+  const handleClaim = () => {
     setLoading(true);
     
-    try {
-      const { request } = await publicClient.simulateContract({
-        address: FAUCET_ADDRESS,
-        abi: FAUCET_ABI,
-        functionName: 'claim',
-        account: wallet.account
+    // Simulate network delay
+    setTimeout(() => {
+      const newBalance = (parseFloat(balance) + 50).toFixed(2);
+      setBalance(newBalance);
+      
+      addTransaction({
+        accountId: wallet.accountId,
+        type: 'receive',
+        amount: '50.00',
+        from: 'Arc Faucet',
+        status: 'completed'
       });
 
-      const hash = await wallet.client.writeContract(request);
-      console.log("Faucet Claim Tx:", hash);
-      
-      await publicClient.waitForTransactionReceipt({ hash });
-      
-      // Log for history tab
-      const txs = JSON.parse(localStorage.getItem('payx_real_txs') || '[]');
-      txs.unshift({ id: hash, type: 'receive', amount: '50.00', from: 'Arc Faucet', timestamp: new Date().toISOString(), to: wallet.address });
-      localStorage.setItem('payx_real_txs', JSON.stringify(txs));
-
-      refreshBalance();
       setLoading(false);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
-    } catch (err) {
-      console.error(err);
-      alert(err.shortMessage || err.message || "Failed to claim from faucet. You may need to wait 1 minute.");
-      setLoading(false);
-    }
+    }, 1500);
   };
 
   return (
@@ -52,8 +41,7 @@ const Faucet = ({ wallet, balance, refreshBalance, onBack }) => {
 
       <div className="text-center mb-8">
         <Droplet size={48} className="mx-auto mb-4" style={{ color: 'var(--accent)', display: 'block', margin: '0 auto 1rem auto' }} />
-        <p className="text-muted">Claim 50.00 USDC testnet tokens to test transactions on the network.</p>
-        <p className="text-sm text-muted mt-2">(Limit 1 claim per minute)</p>
+        <p className="text-muted">Claim 50.00 USDC to test the platform.</p>
       </div>
 
       <div className="balance-card mb-6 text-center" style={{ padding: '1.5rem' }}>
@@ -71,7 +59,7 @@ const Faucet = ({ wallet, balance, refreshBalance, onBack }) => {
         style={{ width: '100%', padding: '1rem' }}
       >
         {loading ? (
-          <><Loader2 className="spinner" size={20} /> Requesting on-chain...</>
+          <><Loader2 className="spinner" size={20} /> Processing...</>
         ) : success ? (
           <><CheckCircle2 size={20} /> Tokens Sent!</>
         ) : (
