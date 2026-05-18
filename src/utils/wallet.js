@@ -42,7 +42,7 @@ export const getWalletFromEmail = (email) => {
   };
 };
 
-export const getWalletFromPasskey = async () => {
+export const registerPasskeyWallet = async () => {
   if (!window.PublicKeyCredential) {
     throw new Error("WebAuthn is not supported in this browser.");
   }
@@ -95,10 +95,53 @@ export const getWalletFromPasskey = async () => {
       client,
       address: account.address,
       privateKey: hash,
-      type: 'passkey'
+      type: 'passkey',
+      passkeyId: credential.id
     };
   } catch (err) {
     console.error("Passkey error:", err);
+    throw err;
+  }
+};
+
+export const loginWithPasskey = async () => {
+  if (!window.PublicKeyCredential) throw new Error("WebAuthn is not supported.");
+  
+  const challenge = new Uint8Array(32);
+  window.crypto.getRandomValues(challenge);
+
+  try {
+    const credential = await navigator.credentials.get({
+      publicKey: {
+        challenge: challenge,
+        rpId: window.location.hostname,
+        userVerification: "required",
+        timeout: 60000
+      }
+    });
+
+    if (!credential) throw new Error("Passkey login failed.");
+
+    const secretSalt = "payx-arc-network-super-secret";
+    const hash = ethers.id(credential.id + secretSalt);
+    
+    const account = privateKeyToAccount(hash);
+    const client = createWalletClient({
+      account,
+      chain: arcTestnet,
+      transport: http(),
+    });
+    
+    return {
+      account,
+      client,
+      address: account.address,
+      privateKey: hash,
+      type: 'passkey',
+      passkeyId: credential.id
+    };
+  } catch (err) {
+    console.error("Passkey login error:", err);
     throw err;
   }
 };

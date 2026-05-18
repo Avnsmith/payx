@@ -1,33 +1,39 @@
 import React, { useState } from 'react';
-import { getWalletFromEmail, getWalletFromPasskey } from '../utils/wallet';
+import { getWalletFromEmail, loginWithPasskey } from '../utils/wallet';
+import { getUser } from '../utils/db';
 import { Wallet, ArrowRight, Loader2, Fingerprint } from 'lucide-react';
 
-const Login = ({ onLogin }) => {
+const Login = ({ onLogin, onNavigate }) => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     if (!email) return;
     
     setLoading(true);
-    // Simulate network delay for realistic feel
-    setTimeout(() => {
-      try {
-        const walletData = getWalletFromEmail(email);
-        onLogin(walletData);
-      } catch (err) {
-        console.error("Login failed:", err);
-        setLoading(false);
-      }
-    }, 1500);
+    try {
+      const existing = getUser(email.toLowerCase());
+      if (!existing) throw new Error("Account not found. Please sign up first.");
+
+      const walletData = getWalletFromEmail(email);
+      setTimeout(() => {
+        onLogin({ ...walletData, accountId: existing.accountId });
+      }, 1000);
+    } catch (err) {
+      alert(err.message);
+      setLoading(false);
+    }
   };
 
   const handlePasskeyLogin = async () => {
     setLoading(true);
     try {
-      const walletData = await getWalletFromPasskey();
-      onLogin(walletData);
+      const walletData = await loginWithPasskey();
+      const existing = getUser(walletData.passkeyId);
+      if (!existing) throw new Error("Passkey not recognized. Please sign up first.");
+      
+      onLogin({ ...walletData, accountId: existing.accountId });
     } catch (err) {
       console.error("Passkey login failed:", err);
       alert(err.message || "Passkey login failed");
@@ -77,6 +83,13 @@ const Login = ({ onLogin }) => {
           <Fingerprint size={20} /> Sign in with Passkey
         </button>
       </form>
+
+      <div className="text-center mt-6 text-sm">
+        <span className="text-muted">Don't have an account? </span>
+        <button type="button" className="font-semibold text-accent" onClick={() => onNavigate('signup')} style={{ textDecoration: 'underline' }}>
+          Sign Up
+        </button>
+      </div>
     </div>
   );
 };

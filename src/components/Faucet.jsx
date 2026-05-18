@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Droplet, ArrowLeft, Loader2, CheckCircle2 } from 'lucide-react';
+import { addTransaction } from '../utils/db';
 
 const Faucet = ({ wallet, balance, setBalance, onBack }) => {
   const [loading, setLoading] = useState(false);
@@ -12,6 +13,7 @@ const Faucet = ({ wallet, balance, setBalance, onBack }) => {
     // Simulate network request to Arc Faucet
     setTimeout(() => {
       setBalance(prev => (parseFloat(prev) + 50.00).toFixed(2));
+      addTransaction(wallet.accountId, { type: 'receive', amount: '50.00', from: 'Arc Faucet' });
       setLoading(false);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);

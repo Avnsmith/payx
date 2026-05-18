@@ -3,6 +3,8 @@ import { LogOut, Send, QrCode, Wallet, Users } from 'lucide-react';
 import SendModal from './SendModal';
 import ReceiveModal from './ReceiveModal';
 import { getWalletFromEmail } from '../utils/wallet';
+import { addTransaction } from '../utils/db';
+import { History as HistoryIcon } from 'lucide-react';
 
 const Dashboard = ({ wallet, appKit, balance, setBalance, onLogout, onNavigate }) => {
   const [showSendModal, setShowSendModal] = useState(false);
@@ -48,6 +50,7 @@ const Dashboard = ({ wallet, appKit, balance, setBalance, onLogout, onNavigate }
       console.warn("Real network execution failed (expected for demo without API keys), simulating success instead:", err.message);
       // Fallback for demo if AppKit fails due to missing provider or keys
       setBalance(prev => (parseFloat(prev) - parseFloat(amount)).toFixed(2));
+      addTransaction(wallet.accountId, { type: 'send', amount, to: targetAddress });
       return true;
     }
   };
@@ -60,8 +63,11 @@ const Dashboard = ({ wallet, appKit, balance, setBalance, onLogout, onNavigate }
           PayX
         </div>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
-          <button className="btn-secondary" style={{ padding: '0.5rem 1rem' }} onClick={() => onNavigate('faucet')}>
+          <button className="btn-secondary" style={{ padding: '0.5rem' }} onClick={() => onNavigate('faucet')} title="Faucet">
             Faucet
+          </button>
+          <button className="btn-secondary" style={{ padding: '0.5rem' }} onClick={() => onNavigate('history')} title="History">
+            <HistoryIcon size={16} />
           </button>
           <button className="btn-secondary" style={{ padding: '0.5rem' }} onClick={onLogout} title="Logout">
             <LogOut size={16} />
