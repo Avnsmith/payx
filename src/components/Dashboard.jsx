@@ -2,60 +2,47 @@ import React, { useState } from 'react';
 import { LogOut, Send, QrCode, Wallet, Users } from 'lucide-react';
 import SendModal from './SendModal';
 import ReceiveModal from './ReceiveModal';
-import { getWalletFromEmail } from '../utils/wallet';
-import { addTransaction } from '../utils/db';
 import { History as HistoryIcon } from 'lucide-react';
 
-const Dashboard = ({ wallet, appKit, balance, setBalance, onLogout, onNavigate }) => {
+const Dashboard = ({ wallet, balance, setBalance, onLogout, onNavigate }) => {
   const [showSendModal, setShowSendModal] = useState(false);
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   
-  const [friends, setFriends] = useState(() => {
-    const saved = localStorage.getItem('payx_friends');
-    return saved ? JSON.parse(saved) : [
-      { name: 'Alice', address: '0x71C...976F' },
-      { name: 'Bob', address: '0x39A...88D1' }
-    ];
-  });
+  const [friends] = useState([
+    { name: 'Alice', address: '0x71C...976F' },
+    { name: 'Bob', address: '0x39A...88D1' }
+  ]);
 
-  const handleSend = (to, amount) => {
-    return new Promise((resolve) => {
-      let targetAddress = to.trim();
+  const handleSend = async (to, amount) => {
+    let targetAddress = to.trim();
+    if (!/^0x[a-fA-F0-9]{40}$/.test(targetAddress)) {
+      alert('Please enter a valid 0x address.');
+      return false;
+    }
+
+    try {
+      const res = await fetch('/api/send-transaction', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          walletId: wallet.walletId,
+          destinationAddress: targetAddress,
+          amount: amount.toString()
+        })
+      });
       
-      // If input is an email, generate deterministic address
-      if (/^\S+@\S+\.\S+$/.test(targetAddress)) {
-        targetAddress = getWalletFromEmail(targetAddress).address;
-      } else if (!/^0x[a-fA-F0-9]{40}$/.test(targetAddress)) {
-        alert('Please enter a valid 0x address or email address.');
-        resolve(false);
-        return;
-      }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
 
-      const currentBalance = parseFloat(balance);
-      const sendAmount = parseFloat(amount);
+      console.log("Circle Transaction ID:", data.transactionId);
+      alert("Transfer initiated successfully via Circle API!\nTxID: " + data.transactionId);
       
-      if (sendAmount > currentBalance) {
-        alert("Insufficient mock balance!");
-        resolve(false);
-        return;
-      }
-
-      // Simulate network delay for sending
-      setTimeout(() => {
-        const newBalance = (currentBalance - sendAmount).toFixed(2);
-        setBalance(newBalance);
-
-        addTransaction({
-          accountId: wallet.accountId,
-          type: 'send',
-          amount: sendAmount.toFixed(2),
-          to: targetAddress,
-          status: 'completed'
-        });
-
-        resolve(true);
-      }, 1500);
-    });
+      return true;
+    } catch (err) {
+      console.error(err);
+      alert("Send failed: " + err.message);
+      return false;
+    }
   };
 
   return (
@@ -84,7 +71,7 @@ const Dashboard = ({ wallet, appKit, balance, setBalance, onLogout, onNavigate }
           <span className="balance-currency">USDC</span>
           {balance}
         </div>
-        <div className="text-sm text-muted">Arc Network • {wallet.address.slice(0,6)}...{wallet.address.slice(-4)}</div>
+        <div className="text-sm text-muted">Dev-Controlled • {wallet.address.slice(0,6)}...{wallet.address.slice(-4)}</div>
       </div>
 
       <div className="action-buttons">
@@ -103,9 +90,7 @@ const Dashboard = ({ wallet, appKit, balance, setBalance, onLogout, onNavigate }
         </div>
         <div className="friend-list">
           {friends.map((friend, i) => (
-            <div key={i} className="friend-item" onClick={() => {
-              setShowSendModal(true);
-            }}>
+            <div key={i} className="friend-item" onClick={() => setShowSendModal(true)}>
               <div className="friend-avatar">
                 {friend.name.charAt(0)}
               </div>

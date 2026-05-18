@@ -1,28 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { getWalletFromEmail, registerPasskeyWallet } from '../utils/wallet';
-import { createUser, initDb } from '../utils/db';
+import { createDeveloperWallet, registerPasskeyWallet } from '../utils/wallet';
 import { Wallet, ArrowRight, Loader2, Fingerprint } from 'lucide-react';
 
 const SignUp = ({ onSignUp, onNavigate }) => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    initDb();
-  }, []);
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email) return;
     
     setLoading(true);
     try {
-      const walletData = getWalletFromEmail(email);
-      const accountId = createUser({ email: email.toLowerCase(), type: 'email' });
-      
-      setTimeout(() => {
-        onSignUp({ ...walletData, accountId });
-      }, 1000);
+      const walletData = await createDeveloperWallet(email);
+      onSignUp(walletData);
     } catch (err) {
       alert(err.message);
       setLoading(false);
@@ -33,8 +24,7 @@ const SignUp = ({ onSignUp, onNavigate }) => {
     setLoading(true);
     try {
       const walletData = await registerPasskeyWallet();
-      const accountId = createUser({ passkeyId: walletData.passkeyId, type: 'passkey' });
-      onSignUp({ ...walletData, accountId });
+      onSignUp(walletData);
     } catch (err) {
       console.error("Passkey registration failed:", err);
       alert(err.message || "Passkey registration failed");
@@ -53,7 +43,7 @@ const SignUp = ({ onSignUp, onNavigate }) => {
       
       <div className="text-center mb-6">
         <h2 className="mb-2">Create Account</h2>
-        <p className="text-muted">Join PayX and get your virtual wallet instantly.</p>
+        <p className="text-muted">Join PayX to get a secure Developer-Controlled Circle Wallet.</p>
       </div>
       
       <form onSubmit={handleSubmit}>
@@ -72,7 +62,7 @@ const SignUp = ({ onSignUp, onNavigate }) => {
         
         <button type="submit" className="btn-primary mt-6" disabled={loading}>
           {loading ? (
-            <><Loader2 className="spinner" size={20} /> Creating Wallet...</>
+            <><Loader2 className="spinner" size={20} /> Generating Wallet via Circle API...</>
           ) : (
             <>Sign Up <ArrowRight size={20} /></>
           )}

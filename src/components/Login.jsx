@@ -1,29 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import { getWalletFromEmail, loginWithPasskey } from '../utils/wallet';
-import { getUser, initDb } from '../utils/db';
+import React, { useState } from 'react';
+import { getDeveloperWallet, loginWithPasskey } from '../utils/wallet';
 import { Wallet, ArrowRight, Loader2, Fingerprint } from 'lucide-react';
 
 const Login = ({ onLogin, onNavigate }) => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
 
-  useEffect(() => {
-    initDb();
-  }, []);
-
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!email) return;
     
     setLoading(true);
     try {
-      const existing = getUser(email.toLowerCase());
-      if (!existing) throw new Error("Account not found. Please sign up first.");
-
-      const walletData = getWalletFromEmail(email);
-      setTimeout(() => {
-        onLogin({ ...walletData, accountId: existing.accountId });
-      }, 1000);
+      const walletData = await getDeveloperWallet(email);
+      onLogin(walletData);
     } catch (err) {
       alert(err.message);
       setLoading(false);
@@ -34,10 +24,7 @@ const Login = ({ onLogin, onNavigate }) => {
     setLoading(true);
     try {
       const walletData = await loginWithPasskey();
-      const existing = getUser(walletData.passkeyId);
-      if (!existing) throw new Error("Passkey not recognized. Please sign up first.");
-      
-      onLogin({ ...walletData, accountId: existing.accountId });
+      onLogin(walletData);
     } catch (err) {
       console.error("Passkey login failed:", err);
       alert(err.message || "Passkey login failed");
@@ -56,7 +43,7 @@ const Login = ({ onLogin, onNavigate }) => {
       
       <div className="text-center mb-6">
         <h2 className="mb-2">Welcome Back</h2>
-        <p className="text-muted">Sign in with your email to access your virtual wallet.</p>
+        <p className="text-muted">Sign in to access your secure Circle Wallet.</p>
       </div>
       
       <form onSubmit={handleSubmit}>
@@ -75,7 +62,7 @@ const Login = ({ onLogin, onNavigate }) => {
         
         <button type="submit" className="btn-primary mt-6" disabled={loading}>
           {loading ? (
-            <><Loader2 className="spinner" size={20} /> Accessing Wallet...</>
+            <><Loader2 className="spinner" size={20} /> Accessing Circle API...</>
           ) : (
             <>Continue <ArrowRight size={20} /></>
           )}
