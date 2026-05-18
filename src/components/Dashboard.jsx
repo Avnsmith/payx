@@ -2,11 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { LogOut, Send, QrCode, Wallet, Users } from 'lucide-react';
 import SendModal from './SendModal';
 import ReceiveModal from './ReceiveModal';
-import { getWalletFromEmail } from '../utils/wallet';
-import { addTransaction } from '../utils/db';
+import { getWalletFromEmail, publicClient } from '../utils/wallet';
+import { USDC_ADDRESS, USDC_ABI } from '../utils/contracts';
 import { History as HistoryIcon } from 'lucide-react';
+import { parseUnits } from 'viem';
 
-const Dashboard = ({ wallet, appKit, balance, setBalance, onLogout, onNavigate }) => {
+const Dashboard = ({ wallet, appKit, balance, refreshBalance, onLogout, onNavigate }) => {
   const [showSendModal, setShowSendModal] = useState(false);
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   
@@ -29,29 +30,34 @@ const Dashboard = ({ wallet, appKit, balance, setBalance, onLogout, onNavigate }
       return false;
     }
 
-    if (!appKit || !appKit.kit) {
-      console.warn("AppKit not fully initialized. Simulating transaction.");
-      setBalance(prev => (parseFloat(prev) - parseFloat(amount)).toFixed(2));
-      return true;
-    }
-    
     try {
-      // Using Arc App Kit for sending USDC
-      const result = await appKit.kit.send({
-        from: { adapter: appKit.adapter, chain: "Arc_Testnet" },
-        to: targetAddress,
-        amount: amount.toString(),
-        token: "USDC",
+      const amountUnits = parseUnits(amount.toString(), 6);
+      
+      const { request } = await publicClient.simulateContract({
+        address: USDC_ADDRESS,
+        abi: USDC_ABI,
+        functionName: 'transfer',
+        args: [targetAddress, amountUnits],
+        account: wallet.account
       });
-      console.log("Send successful:", result);
-      setBalance(prev => (parseFloat(prev) - parseFloat(amount)).toFixed(2));
+
+      const hash = await wallet.client.writeContract(request);
+      console.log("Transaction Hash:", hash);
+      
+      // Wait for confirmation
+      await publicClient.waitForTransactionReceipt({ hash });
+      
+      // Add local history reference since indexing takes time on real nets
+      const txs = JSON.parse(localStorage.getItem('payx_real_txs') || '[]');
+      txs.unshift({ id: hash, type: 'send', amount, to: targetAddress, timestamp: new Date().toISOString(), from: wallet.address });
+      localStorage.setItem('payx_real_txs', JSON.stringify(txs));
+
+      refreshBalance();
       return true;
     } catch (err) {
-      console.warn("Real network execution failed (expected for demo without API keys), simulating success instead:", err.message);
-      // Fallback for demo if AppKit fails due to missing provider or keys
-      setBalance(prev => (parseFloat(prev) - parseFloat(amount)).toFixed(2));
-      addTransaction(wallet.accountId, { type: 'send', amount, to: targetAddress });
-      return true;
+      console.error("Send failed:", err);
+      alert("Failed to send transaction: " + err.message);
+      return false;
     }
   };
 
@@ -81,7 +87,7 @@ const Dashboard = ({ wallet, appKit, balance, setBalance, onLogout, onNavigate }
           <span className="balance-currency">USDC</span>
           {balance}
         </div>
-        <div className="text-sm text-muted">Arc Network • {wallet.address.slice(0,6)}...{wallet.address.slice(-4)}</div>
+        <div className="text-sm text-muted">Local Hardhat • {wallet.address.slice(0,6)}...{wallet.address.slice(-4)}</div>
       </div>
 
       <div className="action-buttons">
@@ -101,7 +107,6 @@ const Dashboard = ({ wallet, appKit, balance, setBalance, onLogout, onNavigate }
         <div className="friend-list">
           {friends.map((friend, i) => (
             <div key={i} className="friend-item" onClick={() => {
-              // Could pre-fill modal in a real app
               setShowSendModal(true);
             }}>
               <div className="friend-avatar">

@@ -1,26 +1,20 @@
 import React, { useState } from 'react';
 import { getWalletFromEmail, registerPasskeyWallet } from '../utils/wallet';
-import { registerUser, getUser } from '../utils/db';
 import { Wallet, ArrowRight, Loader2, Fingerprint } from 'lucide-react';
 
 const SignUp = ({ onSignUp, onNavigate }) => {
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleEmailSignUp = async (e) => {
+  const handleSubmit = (e) => {
     e.preventDefault();
     if (!email) return;
-
+    
     setLoading(true);
     try {
-      const existing = getUser(email.toLowerCase());
-      if (existing) throw new Error("Email already registered. Please sign in.");
-
       const walletData = getWalletFromEmail(email);
-      const accountId = registerUser(email.toLowerCase(), 'email');
-      
       setTimeout(() => {
-        onSignUp({ ...walletData, accountId });
+        onSignUp(walletData);
       }, 1000);
     } catch (err) {
       alert(err.message);
@@ -32,13 +26,7 @@ const SignUp = ({ onSignUp, onNavigate }) => {
     setLoading(true);
     try {
       const walletData = await registerPasskeyWallet();
-      
-      const existing = getUser(walletData.passkeyId);
-      if (existing) throw new Error("Passkey already registered. Please sign in.");
-
-      const accountId = registerUser(walletData.passkeyId, 'passkey');
-      
-      onSignUp({ ...walletData, accountId });
+      onSignUp(walletData);
     } catch (err) {
       console.error("Passkey registration failed:", err);
       alert(err.message || "Passkey registration failed");
@@ -48,7 +36,7 @@ const SignUp = ({ onSignUp, onNavigate }) => {
 
   return (
     <div className="main-card glass-panel">
-      <div className="app-header" style={{ justifyContent: 'center', marginBottom: '1rem' }}>
+      <div className="app-header" style={{ justifyContent: 'center' }}>
         <div className="logo" style={{ fontSize: '2rem' }}>
           <Wallet size={32} />
           PayX
@@ -56,11 +44,11 @@ const SignUp = ({ onSignUp, onNavigate }) => {
       </div>
       
       <div className="text-center mb-6">
-        <h2 style={{ fontSize: '1.5rem', marginBottom: '0.5rem' }}>Create Account</h2>
-        <p className="text-muted">Join PayX on the Arc Network</p>
+        <h2 className="mb-2">Create Account</h2>
+        <p className="text-muted">Join PayX and get your local Web3 wallet instantly.</p>
       </div>
-
-      <form onSubmit={handleEmailSignUp}>
+      
+      <form onSubmit={handleSubmit}>
         <div className="input-group">
           <label className="input-label">Email Address</label>
           <input 
@@ -74,9 +62,9 @@ const SignUp = ({ onSignUp, onNavigate }) => {
           />
         </div>
         
-        <button type="submit" className="btn-primary" disabled={loading}>
+        <button type="submit" className="btn-primary mt-6" disabled={loading}>
           {loading ? (
-            <><Loader2 className="spinner" size={20} /> Creating...</>
+            <><Loader2 className="spinner" size={20} /> Creating Wallet...</>
           ) : (
             <>Sign Up <ArrowRight size={20} /></>
           )}
@@ -85,14 +73,14 @@ const SignUp = ({ onSignUp, onNavigate }) => {
         <div className="text-center my-6 text-muted text-sm font-semibold">OR</div>
         
         <button type="button" className="btn-secondary w-full" onClick={handlePasskeySignUp} disabled={loading} style={{ width: '100%' }}>
-          <Fingerprint size={20} /> Register with Passkey
+          <Fingerprint size={20} /> Sign up with Passkey
         </button>
       </form>
 
       <div className="text-center mt-6 text-sm">
         <span className="text-muted">Already have an account? </span>
         <button type="button" className="font-semibold text-accent" onClick={() => onNavigate('login')} style={{ textDecoration: 'underline' }}>
-          Sign In
+          Log In
         </button>
       </div>
     </div>

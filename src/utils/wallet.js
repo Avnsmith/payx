@@ -1,43 +1,43 @@
-import { createWalletClient, http } from 'viem';
-import { privateKeyToAccount } from 'viem/accounts';
-import { defineChain } from 'viem';
 import { ethers } from 'ethers';
+import { createWalletClient, createPublicClient, http } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { hardhat } from 'viem/chains';
 import { createViemAdapterFromPrivateKey } from '@circle-fin/adapter-viem-v2';
 import { AppKit } from '@circle-fin/app-kit';
 
-// Dummy Arc Testnet chain definition for Viem if needed
-export const arcTestnet = defineChain({
-  id: 984122, // Example ID, might need updating to real Arc Testnet ID
-  name: 'Arc Testnet',
-  network: 'arc-testnet',
-  nativeCurrency: { name: 'Ether', symbol: 'ETH', decimals: 18 },
-  rpcUrls: {
-    default: { http: ['https://testnet.arc.network/rpc'] },
-    public: { http: ['https://testnet.arc.network/rpc'] },
-  },
+export const publicClient = createPublicClient({
+  chain: hardhat,
+  transport: http('http://127.0.0.1:8545')
 });
 
+const HARDHAT_MNEMONIC = "test test test test test test test test test test test junk";
+
+// Deterministically select one of the 20 pre-funded Hardhat accounts
+const getFundedAccount = (identifier) => {
+  let hash = 0;
+  for (let i = 0; i < identifier.length; i++) {
+    hash = (hash << 5) - hash + identifier.charCodeAt(i);
+    hash = hash & hash;
+  }
+  const index = Math.abs(hash) % 20;
+  const wallet = ethers.HDNodeWallet.fromPhrase(HARDHAT_MNEMONIC, null, "m/44'/60'/0'/0/" + index);
+  return wallet.privateKey;
+};
+
 export const getWalletFromEmail = (email) => {
-  // Deterministic private key derivation for demo purposes
-  // DO NOT USE THIS IN PRODUCTION FOR REAL FUNDS
-  const secretSalt = "payx-arc-network-super-secret";
-  const hash = ethers.id(email.toLowerCase() + secretSalt);
-  
-  // Create an account from the private key
-  const account = privateKeyToAccount(hash);
-  
-  // Create a Viem wallet client
+  const privateKey = getFundedAccount(email.toLowerCase());
+  const account = privateKeyToAccount(privateKey);
   const client = createWalletClient({
     account,
-    chain: arcTestnet,
-    transport: http(),
+    chain: hardhat,
+    transport: http('http://127.0.0.1:8545'),
   });
-  
+
   return {
     account,
     client,
     address: account.address,
-    privateKey: hash,
+    privateKey,
     type: 'email'
   };
 };
@@ -80,21 +80,19 @@ export const registerPasskeyWallet = async () => {
 
     if (!credential) throw new Error("Passkey creation failed or was cancelled.");
 
-    const secretSalt = "payx-arc-network-super-secret";
-    const hash = ethers.id(credential.id + secretSalt);
-    
-    const account = privateKeyToAccount(hash);
+    const privateKey = getFundedAccount(credential.id);
+    const account = privateKeyToAccount(privateKey);
     const client = createWalletClient({
       account,
-      chain: arcTestnet,
-      transport: http(),
+      chain: hardhat,
+      transport: http('http://127.0.0.1:8545'),
     });
     
     return {
       account,
       client,
       address: account.address,
-      privateKey: hash,
+      privateKey,
       type: 'passkey',
       passkeyId: credential.id
     };
@@ -122,21 +120,19 @@ export const loginWithPasskey = async () => {
 
     if (!credential) throw new Error("Passkey login failed.");
 
-    const secretSalt = "payx-arc-network-super-secret";
-    const hash = ethers.id(credential.id + secretSalt);
-    
-    const account = privateKeyToAccount(hash);
+    const privateKey = getFundedAccount(credential.id);
+    const account = privateKeyToAccount(privateKey);
     const client = createWalletClient({
       account,
-      chain: arcTestnet,
-      transport: http(),
+      chain: hardhat,
+      transport: http('http://127.0.0.1:8545'),
     });
     
     return {
       account,
       client,
       address: account.address,
-      privateKey: hash,
+      privateKey,
       type: 'passkey',
       passkeyId: credential.id
     };
@@ -147,12 +143,12 @@ export const loginWithPasskey = async () => {
 };
 
 export const initAppKit = (walletData) => {
-  // Create the adapter wrapper for AppKit
+  // Initialize Circle AppKit using the local Hardhat chain
   const adapter = createViemAdapterFromPrivateKey({ 
-    privateKey: walletData.privateKey 
+    privateKey: walletData.privateKey,
+    chain: hardhat
   });
   
-  // Initialize AppKit
   const kit = new AppKit();
   
   return { kit, adapter };
