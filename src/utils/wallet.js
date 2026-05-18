@@ -66,7 +66,10 @@ export const getWalletFromPasskey = async () => {
           name: "user@payx.local",
           displayName: "PayX Passkey User"
         },
-        pubKeyCredParams: [{ alg: -7, type: "public-key" }],
+        pubKeyCredParams: [
+          { alg: -7, type: "public-key" },
+          { alg: -257, type: "public-key" }
+        ],
         authenticatorSelection: {
           authenticatorAttachment: "platform"
         },

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { LogOut, Send, QrCode, Wallet, Users } from 'lucide-react';
 import SendModal from './SendModal';
 import ReceiveModal from './ReceiveModal';
+import { getWalletFromEmail } from '../utils/wallet';
 
 const Dashboard = ({ wallet, appKit, balance, setBalance, onLogout, onNavigate }) => {
   const [showSendModal, setShowSendModal] = useState(false);
@@ -16,6 +17,16 @@ const Dashboard = ({ wallet, appKit, balance, setBalance, onLogout, onNavigate }
   });
 
   const handleSend = async (to, amount) => {
+    let targetAddress = to.trim();
+    
+    // Check if input is an email, if so derive address deterministically
+    if (/^\S+@\S+\.\S+$/.test(targetAddress)) {
+      targetAddress = getWalletFromEmail(targetAddress).address;
+    } else if (!/^0x[a-fA-F0-9]{40}$/.test(targetAddress)) {
+      alert('Please enter a valid 0x address or email address.');
+      return false;
+    }
+
     if (!appKit || !appKit.kit) {
       console.warn("AppKit not fully initialized. Simulating transaction.");
       setBalance(prev => (parseFloat(prev) - parseFloat(amount)).toFixed(2));
@@ -26,7 +37,7 @@ const Dashboard = ({ wallet, appKit, balance, setBalance, onLogout, onNavigate }
       // Using Arc App Kit for sending USDC
       const result = await appKit.kit.send({
         from: { adapter: appKit.adapter, chain: "Arc_Testnet" },
-        to: to,
+        to: targetAddress,
         amount: amount.toString(),
         token: "USDC",
       });
