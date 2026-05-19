@@ -4,7 +4,7 @@ import { W3SSdk } from '@circle-fin/w3s-pw-web-sdk';
 import SendModal from './SendModal';
 import ReceiveModal from './ReceiveModal';
 
-const appId = import.meta.env.NEXT_PUBLIC_CIRCLE_APP_ID || "c4d1da72-111e-4d52-bdbf-2e74a2d803d5";
+const appId = "ff030750-f8da-5838-885a-c8b46b4cbad0";
 
 const Dashboard = ({ wallet, balance, setBalance, onLogout, onNavigate, fetchBalance }) => {
   const [showSendModal, setShowSendModal] = useState(false);

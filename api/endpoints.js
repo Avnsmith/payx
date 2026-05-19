@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 dotenv.config();
 
 const CIRCLE_BASE_URL = process.env.NEXT_PUBLIC_CIRCLE_BASE_URL ?? "https://api.circle.com";
-const CIRCLE_API_KEY = process.env.CIRCLE_API_KEY ?? "TEST_API_KEY:ce1f6ccd7399c6afc53ba2e17e1915a8:a4635c1917dd171139d0457cbae27826";
+const CIRCLE_API_KEY = process.env.CIRCLE_API_KEY ?? "TEST_API_KEY:0f37606e6ee9d0350c6eeb26fc22b106:ced0c91d5191ce66c81136d1d2150fee";
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
