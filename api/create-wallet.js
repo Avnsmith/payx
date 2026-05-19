@@ -5,20 +5,24 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
   const { email } = req.body;
 
-  if (!process.env.CIRCLE_API_KEY || !process.env.ENTITY_SECRET_CIPHERTEXT) {
-    return res.status(500).json({ error: "Circle API keys are missing in backend" });
+  const apiKey = process.env.CIRCLE_API_KEY;
+  const entitySecret = process.env.ENTITY_SECRET_CIPHERTEXT;
+
+  if (!apiKey || !entitySecret) {
+    return res.status(500).json({ error: "Circle API credentials are missing" });
   }
 
   const circle = initiateDeveloperControlledWalletsClient({
-    apiKey: process.env.CIRCLE_API_KEY,
-    entitySecret: process.env.ENTITY_SECRET_CIPHERTEXT,
+    apiKey: apiKey,
+    entitySecret: entitySecret,
   });
 
   try {
-    // 1. Get or create Wallet Set
-    const walletSetsRes = await circle.getWalletSets();
+    // 1. Get or create Wallet Set using the correct listWalletSets method
+    const walletSetsRes = await circle.listWalletSets();
     let walletSetId;
-    if (walletSetsRes.data && walletSetsRes.data.walletSets.length > 0) {
+    
+    if (walletSetsRes.data && walletSetsRes.data.walletSets && walletSetsRes.data.walletSets.length > 0) {
       walletSetId = walletSetsRes.data.walletSets[0].id;
     } else {
       const createSetRes = await circle.createWalletSet({
@@ -31,7 +35,7 @@ export default async function handler(req, res) {
     // 2. Create the Wallet on Ethereum Sepolia for testnet USDC
     const createWalletRes = await circle.createWallets({
       idempotencyKey: uuidv4(),
-      accountType: 'SCA', // Smart Contract Account allows gas abstraction
+      accountType: 'SCA',
       blockchains: ['ETH-SEPOLIA'],
       count: 1,
       walletSetId: walletSetId,
