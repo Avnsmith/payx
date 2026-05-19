@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { W3SSdk } from '@circle-fin/w3s-pw-web-sdk';
 import { Wallet, ArrowRight, Loader2, KeyRound, User, UserPlus, LogIn } from 'lucide-react';
 
-const appId = import.meta.env.NEXT_PUBLIC_CIRCLE_APP_ID;
+const appId = import.meta.env.NEXT_PUBLIC_CIRCLE_APP_ID || "c4d1da72-111e-4d52-bdbf-2e74a2d803d5";
 
 const Auth = ({ onAuth }) => {
   const sdkRef = useRef(null);
