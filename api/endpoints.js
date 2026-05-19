@@ -17,6 +17,7 @@ export default async function handler(req, res) {
     }
 
     if (!CIRCLE_API_KEY) {
+      console.error("CIRCLE_API_KEY is missing from process.env!");
       return res.status(500).json({ error: "Circle API Key is not configured" });
     }
 
