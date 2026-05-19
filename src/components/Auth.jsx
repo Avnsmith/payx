@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { W3SSdk } from '@circle-fin/w3s-pw-web-sdk';
-import { Wallet, ArrowRight, Loader2, CheckCircle2, ShieldAlert, KeyRound, ShieldCheck, User } from 'lucide-react';
+import { Wallet, ArrowRight, Loader2, KeyRound, User, UserPlus, LogIn } from 'lucide-react';
 
 const appId = import.meta.env.NEXT_PUBLIC_CIRCLE_APP_ID;
 
 const Auth = ({ onAuth }) => {
   const sdkRef = useRef(null);
   const [sdkReady, setSdkReady] = useState(false);
+  const [activeTab, setActiveTab] = useState('signin'); // 'signin' or 'signup'
   const [userId, setUserId] = useState('');
   const [deviceId, setDeviceId] = useState('');
-  const [step, setStep] = useState(1); // 1: User ID Entry, 2: Challenge Ready, 3: Success
+  const [step, setStep] = useState(1); // 1: Form Entry, 2: PIN Setup, 3: Loading/Success
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
   const [isError, setIsError] = useState(false);
@@ -17,7 +18,7 @@ const Auth = ({ onAuth }) => {
   const [loginResult, setLoginResult] = useState(null); // { userToken, encryptionKey }
   const [challengeId, setChallengeId] = useState(null);
 
-  // Initialize Circle Web3 SDK
+  // Initialize Circle Web3 SDK on mount
   useEffect(() => {
     let active = true;
 
@@ -31,7 +32,7 @@ const Auth = ({ onAuth }) => {
         if (active) {
           setSdkReady(true);
           
-          // Get/generate Device ID
+          // Get/generate Device ID for security
           let cachedId = localStorage.getItem("deviceId");
           if (!cachedId) {
             cachedId = await sdk.getDeviceId();
@@ -55,7 +56,7 @@ const Auth = ({ onAuth }) => {
     };
   }, []);
 
-  const handleAccessAccount = async (e) => {
+  const handleAuthSubmit = async (e) => {
     e.preventDefault();
     if (!userId || userId.length < 5 || !deviceId) {
       setIsError(true);
@@ -65,81 +66,122 @@ const Auth = ({ onAuth }) => {
 
     setLoading(true);
     setIsError(false);
-    setStatus("Establishing secure session...");
+    setStatus(activeTab === 'signup' ? "Creating your secure wallet vault..." : "Locating your account...");
 
     try {
-      // Step 1: Create user if they don't exist
-      const createRes = await fetch("/api/endpoints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "createUser",
-          userId: userId.toLowerCase().trim()
-        })
-      });
+      const formattedUserId = userId.toLowerCase().trim();
 
-      const createData = await createRes.json();
-      // If code is NOT 155106 (already exists), and not ok, throw error
-      if (!createRes.ok && createData.code !== 155106) {
-        throw new Error(createData.message || "Failed to create user record");
-      }
+      if (activeTab === 'signup') {
+        // --- SIGN UP FLOW ---
+        // 1. Create a new user record on Circle backend
+        const createRes = await fetch("/api/endpoints", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "createUser",
+            userId: formattedUserId
+          })
+        });
 
-      // Step 2: Get user short-lived session token
-      setStatus("Generating secure session tokens...");
-      const tokenRes = await fetch("/api/endpoints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "getUserToken",
-          userId: userId.toLowerCase().trim()
-        })
-      });
-
-      const tokenData = await tokenRes.json();
-      if (!tokenRes.ok) {
-        throw new Error(tokenData.message || "Failed to retrieve user token");
-      }
-
-      const userToken = tokenData.userToken;
-      const encryptionKey = tokenData.encryptionKey;
-      setLoginResult({ userToken, encryptionKey });
-
-      // Step 3: Initialize user (to check if they need a wallet)
-      setStatus("Syncing wallet status on Ethereum Sepolia...");
-      const initRes = await fetch("/api/endpoints", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "initializeUser",
-          userToken
-        })
-      });
-
-      const initData = await initRes.json();
-
-      if (!initRes.ok) {
-        // If they are already initialized (code 155106), fetch existing wallet directly!
-        if (initData.code === 155106) {
-          await loadExistingWallets(userToken);
-          return;
+        const createData = await createRes.json();
+        
+        if (!createRes.ok) {
+          if (createData.code === 155106 || createData.message?.includes("already exists")) {
+            throw new Error("This username is already taken. Please go to the Sign In tab!");
+          }
+          throw new Error(createData.message || "Failed to create user record");
         }
-        throw new Error(initData.message || "Initialization failed");
-      }
 
-      // If new user initialized successfully, we got a challengeId!
-      setChallengeId(initData.challengeId);
-      setStep(2);
-      setStatus("Security PIN setup required for this new account.");
+        // 2. Fetch session tokens
+        setStatus("Generating secure registration tokens...");
+        const tokenRes = await fetch("/api/endpoints", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "getUserToken",
+            userId: formattedUserId
+          })
+        });
+
+        const tokenData = await tokenRes.json();
+        if (!tokenRes.ok) throw new Error(tokenData.message || "Failed to retrieve session tokens");
+
+        setLoginResult({ userToken: tokenData.userToken, encryptionKey: tokenData.encryptionKey });
+
+        // 3. Initialize User to trigger PIN challenge
+        setStatus("Preparing secure PIN initialization challenge...");
+        const initRes = await fetch("/api/endpoints", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "initializeUser",
+            userToken: tokenData.userToken
+          })
+        });
+
+        const initData = await initRes.json();
+        if (!initRes.ok) throw new Error(initData.message || "Failed to prepare setup challenge");
+
+        setChallengeId(initData.challengeId);
+        setStep(2);
+        setStatus("Launch PIN setup below to secure your wallet.");
+      } else {
+        // --- SIGN IN FLOW ---
+        // 1. Try to fetch token directly (will error if user does not exist)
+        const tokenRes = await fetch("/api/endpoints", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "getUserToken",
+            userId: formattedUserId
+          })
+        });
+
+        const tokenData = await tokenRes.json();
+        if (!tokenRes.ok) {
+          throw new Error("Username not found. Switch to the Sign Up tab to create it!");
+        }
+
+        setLoginResult({ userToken: tokenData.userToken, encryptionKey: tokenData.encryptionKey });
+
+        // 2. Initialize or fetch existing wallet
+        setStatus("Verifying secure security parameters...");
+        const initRes = await fetch("/api/endpoints", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "initializeUser",
+            userToken: tokenData.userToken
+          })
+        });
+
+        const initData = await initRes.json();
+
+        if (!initRes.ok) {
+          // 155106 means they are already initialized (wallet setup complete!) -> Load wallets directly!
+          if (initData.code === 155106) {
+            setStatus("Loading secure smart wallet...");
+            await loadExistingWallets(tokenData.userToken, tokenData.encryptionKey);
+            return;
+          }
+          throw new Error(initData.message || "Authentication failed");
+        }
+
+        // If they registered but never completed the challenge setup (rare)
+        setChallengeId(initData.challengeId);
+        setStep(2);
+        setStatus("You registered but didn't finish PIN setup. Configure it now!");
+      }
     } catch (err) {
       console.error(err);
       setIsError(true);
-      setStatus(err.message || "Authentication process encountered an error.");
+      setStatus(err.message || "An authentication error occurred.");
     } finally {
       setLoading(false);
     }
   };
 
-  const loadExistingWallets = async (userToken) => {
+  const loadExistingWallets = async (userToken, encryptionKey) => {
     try {
       const res = await fetch("/api/endpoints", {
         method: "POST",
@@ -155,18 +197,16 @@ const Auth = ({ onAuth }) => {
 
       const wallets = data.wallets || [];
       if (wallets.length > 0) {
-        // Log them in!
         onAuth({
           walletId: wallets[0].id,
           address: wallets[0].address,
           userToken,
-          encryptionKey: loginResult?.encryptionKey || '',
-          email: userId // reuse userId as display name/identifier
+          encryptionKey,
+          email: userId.toLowerCase().trim()
         });
       } else {
-        // This is extremely rare, but just in case
         setIsError(true);
-        setStatus("No wallets found. Contact support.");
+        setStatus("Secure wallet configuration in progress. Try again in a few seconds.");
       }
     } catch (err) {
       console.error(err);
@@ -179,7 +219,7 @@ const Auth = ({ onAuth }) => {
     if (!challengeId || !loginResult || !sdkRef.current) return;
     setLoading(true);
     setIsError(false);
-    setStatus("Launching secure PIN configuration popup...");
+    setStatus("Launching secure hosted Circle setup window...");
 
     sdkRef.current.setAuthentication({
       userToken: loginResult.userToken,
@@ -195,10 +235,9 @@ const Auth = ({ onAuth }) => {
         return;
       }
 
-      // PIN setup completed successfully!
-      setStatus("PIN configured successfully! Fetching your new Sepolia address...");
+      setStatus("PIN configured successfully! Spawning your wallet address on Ethereum Sepolia...");
       await new Promise(r => setTimeout(r, 3500));
-      await loadExistingWallets(loginResult.userToken);
+      await loadExistingWallets(loginResult.userToken, loginResult.encryptionKey);
     });
   };
 
@@ -217,33 +256,91 @@ const Auth = ({ onAuth }) => {
       </div>
 
       {step === 1 && (
-        <form onSubmit={handleAccessAccount}>
-          <div className="input-group">
-            <label className="input-label">Username / User ID</label>
-            <div style={{ position: 'relative' }}>
-              <User size={18} style={{ position: 'absolute', left: '16px', top: '15px', color: 'var(--text-muted)' }} />
-              <input
-                type="text"
-                className="input-field"
-                placeholder="Enter unique username (min 5 chars)"
-                value={userId}
-                onChange={(e) => setUserId(e.target.value)}
-                required
-                disabled={loading || !sdkReady}
-                style={{ paddingLeft: '48px' }}
-                minLength={5}
-              />
-            </div>
+        <>
+          {/* TAB SELECTOR */}
+          <div className="flex p-1 bg-white/5 rounded-xl border border-white/10 mb-6" style={{ display: 'flex', gap: '4px' }}>
+            <button
+              onClick={() => {
+                setActiveTab('signin');
+                setStatus('');
+                setIsError(false);
+              }}
+              style={{
+                flex: 1,
+                padding: '10px',
+                borderRadius: '8px',
+                border: 'none',
+                background: activeTab === 'signin' ? 'var(--accent)' : 'transparent',
+                color: 'white',
+                fontWeight: '600',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              <LogIn size={16} /> Sign In
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('signup');
+                setStatus('');
+                setIsError(false);
+              }}
+              style={{
+                flex: 1,
+                padding: '10px',
+                borderRadius: '8px',
+                border: 'none',
+                background: activeTab === 'signup' ? 'var(--accent)' : 'transparent',
+                color: 'white',
+                fontWeight: '600',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '8px',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              <UserPlus size={16} /> Sign Up
+            </button>
           </div>
 
-          <button type="submit" className="btn-primary mt-6" disabled={loading || !sdkReady}>
-            {loading ? (
-              <><Loader2 className="spinner" size={20} /> Accessing Secure Vault...</>
-            ) : (
-              <>Access Wallet <ArrowRight size={20} /></>
-            )}
-          </button>
-        </form>
+          <form onSubmit={handleAuthSubmit}>
+            <div className="input-group">
+              <label className="input-label">
+                {activeTab === 'signin' ? 'Your Username / User ID' : 'Create Username / User ID'}
+              </label>
+              <div style={{ position: 'relative' }}>
+                <User size={18} style={{ position: 'absolute', left: '16px', top: '15px', color: 'var(--text-muted)' }} />
+                <input
+                  type="text"
+                  className="input-field"
+                  placeholder={activeTab === 'signin' ? "Enter your username" : "Choose unique username (min 5 chars)"}
+                  value={userId}
+                  onChange={(e) => setUserId(e.target.value)}
+                  required
+                  disabled={loading || !sdkReady}
+                  style={{ paddingLeft: '48px' }}
+                  minLength={5}
+                />
+              </div>
+            </div>
+
+            <button type="submit" className="btn-primary mt-6" disabled={loading || !sdkReady}>
+              {loading ? (
+                <><Loader2 className="spinner" size={20} /> Securing vault...</>
+              ) : activeTab === 'signin' ? (
+                <>Sign In <ArrowRight size={20} /></>
+              ) : (
+                <>Create Wallet <ArrowRight size={20} /></>
+              )}
+            </button>
+          </form>
+        </>
       )}
 
       {step === 2 && (
@@ -256,7 +353,7 @@ const Auth = ({ onAuth }) => {
 
           <button className="btn-primary mt-4 w-full" onClick={handleSetupPin} disabled={loading}>
             {loading ? (
-              <><Loader2 className="spinner" size={20} /> Waiting for Setup...</>
+              <><Loader2 className="spinner" size={20} /> Launching Secure Window...</>
             ) : (
               <>Configure Secure PIN</>
             )}
