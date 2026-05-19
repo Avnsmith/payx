@@ -1,17 +1,23 @@
 import { initiateDeveloperControlledWalletsClient } from '@circle-fin/developer-controlled-wallets';
 import { v4 as uuidv4 } from 'uuid';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
   const { walletId, destinationAddress, amount } = req.body;
 
-  if (!process.env.CIRCLE_API_KEY || !process.env.ENTITY_SECRET_CIPHERTEXT) {
-    return res.status(500).json({ error: "Circle API keys are missing" });
+  const apiKey = process.env.CIRCLE_API_KEY;
+  const entitySecret = process.env.ENTITY_SECRET_CIPHERTEXT;
+
+  if (!apiKey || !entitySecret) {
+    return res.status(500).json({ error: "Circle API credentials are missing" });
   }
 
   const circle = initiateDeveloperControlledWalletsClient({
-    apiKey: process.env.CIRCLE_API_KEY,
-    entitySecret: process.env.ENTITY_SECRET_CIPHERTEXT,
+    apiKey: apiKey,
+    entitySecret: entitySecret,
   });
 
   try {
@@ -25,7 +31,7 @@ export default async function handler(req, res) {
           feeLevel: 'MEDIUM'
         }
       },
-      tokenId: '10042f88-4444-59e5-950c-e275f6ed3df6', // Official Testnet USDC on ETH-SEPOLIA
+      tokenId: '10042f88-4444-59e5-950c-e275f6ed3df6',
       walletId: walletId
     });
 

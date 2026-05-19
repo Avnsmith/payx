@@ -1,5 +1,8 @@
 import { initiateDeveloperControlledWalletsClient } from '@circle-fin/developer-controlled-wallets';
 import { v4 as uuidv4 } from 'uuid';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
@@ -18,7 +21,6 @@ export default async function handler(req, res) {
   });
 
   try {
-    // 1. Get or create Wallet Set using the correct listWalletSets method
     const walletSetsRes = await circle.listWalletSets();
     let walletSetId;
     
@@ -32,7 +34,6 @@ export default async function handler(req, res) {
       walletSetId = createSetRes.data.walletSet.id;
     }
 
-    // 2. Create the Wallet on Ethereum Sepolia for testnet USDC
     const createWalletRes = await circle.createWallets({
       idempotencyKey: uuidv4(),
       accountType: 'SCA',
