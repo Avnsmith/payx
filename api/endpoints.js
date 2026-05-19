@@ -17,11 +17,58 @@ export default async function handler(req, res) {
     }
 
     if (!CIRCLE_API_KEY) {
-      console.error("CIRCLE_API_KEY is missing from process.env!");
       return res.status(500).json({ error: "Circle API Key is not configured" });
     }
 
     switch (action) {
+      case "createUser": {
+        const { userId } = params;
+        if (!userId) {
+          return res.status(400).json({ error: "Missing required field: userId" });
+        }
+
+        const response = await fetch(`${CIRCLE_BASE_URL}/v1/w3s/users`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${CIRCLE_API_KEY}`,
+          },
+          body: JSON.stringify({
+            userId,
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          return res.status(response.status).json(data);
+        }
+        return res.status(200).json(data.data);
+      }
+
+      case "getUserToken": {
+        const { userId } = params;
+        if (!userId) {
+          return res.status(400).json({ error: "Missing required field: userId" });
+        }
+
+        const response = await fetch(`${CIRCLE_BASE_URL}/v1/w3s/users/token`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${CIRCLE_API_KEY}`,
+          },
+          body: JSON.stringify({
+            userId,
+          }),
+        });
+
+        const data = await response.json();
+        if (!response.ok) {
+          return res.status(response.status).json(data);
+        }
+        return res.status(200).json(data.data);
+      }
+
       case "requestEmailOtp": {
         const { deviceId, email } = params;
         if (!deviceId || !email) {

@@ -1,24 +1,20 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { W3SSdk } from '@circle-fin/w3s-pw-web-sdk';
-import { Wallet, ArrowRight, Loader2, CheckCircle2, ShieldCheck, Mail } from 'lucide-react';
+import { Wallet, ArrowRight, Loader2, CheckCircle2, ShieldAlert, KeyRound, ShieldCheck, User } from 'lucide-react';
 
 const appId = import.meta.env.NEXT_PUBLIC_CIRCLE_APP_ID;
 
 const Auth = ({ onAuth }) => {
   const sdkRef = useRef(null);
   const [sdkReady, setSdkReady] = useState(false);
-  const [email, setEmail] = useState('');
+  const [userId, setUserId] = useState('');
   const [deviceId, setDeviceId] = useState('');
-  const [step, setStep] = useState(1); // 1: Email, 2: OTP Sent, 3: Verified, 4: Wallet Creation
+  const [step, setStep] = useState(1); // 1: User ID Entry, 2: Challenge Ready, 3: Success
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
   const [isError, setIsError] = useState(false);
 
-  const [deviceToken, setDeviceToken] = useState('');
-  const [deviceEncryptionKey, setDeviceEncryptionKey] = useState('');
-  const [otpToken, setOtpToken] = useState('');
-  
-  const [loginResult, setLoginResult] = useState(null);
+  const [loginResult, setLoginResult] = useState(null); // { userToken, encryptionKey }
   const [challengeId, setChallengeId] = useState(null);
 
   // Initialize Circle Web3 SDK
@@ -27,46 +23,28 @@ const Auth = ({ onAuth }) => {
 
     const init = async () => {
       try {
-        const onLoginComplete = (error, result) => {
-          if (!active) return;
-          if (error || !result) {
-            console.error("Circle Authentication Error:", error);
-            setIsError(true);
-            setStatus(error?.message || "Email authentication failed.");
-            setLoading(false);
-            return;
-          }
-
-          // Success! We received the userToken and encryptionKey
-          setLoginResult({
-            userToken: result.userToken,
-            encryptionKey: result.encryptionKey,
-          });
-          setIsError(false);
-          setStatus("Email verified successfully!");
-          setStep(3);
-          setLoading(false);
-        };
-
-        const sdk = new W3SSdk(
-          { appSettings: { appId } },
-          onLoginComplete
-        );
+        const sdk = new W3SSdk({
+          appSettings: { appId }
+        });
 
         sdkRef.current = sdk;
-        setSdkReady(true);
-
-        // Get or generate Device ID
-        let cachedId = localStorage.getItem("deviceId");
-        if (!cachedId) {
-          cachedId = await sdk.getDeviceId();
-          localStorage.setItem("deviceId", cachedId);
+        if (active) {
+          setSdkReady(true);
+          
+          // Get/generate Device ID
+          let cachedId = localStorage.getItem("deviceId");
+          if (!cachedId) {
+            cachedId = await sdk.getDeviceId();
+            localStorage.setItem("deviceId", cachedId);
+          }
+          setDeviceId(cachedId);
         }
-        setDeviceId(cachedId);
       } catch (err) {
         console.error("Failed to initialize Circle SDK:", err);
-        setIsError(true);
-        setStatus("Failed to initialize secure environment");
+        if (active) {
+          setIsError(true);
+          setStatus("Failed to initialize secure environment");
+        }
       }
     };
 
@@ -77,115 +55,98 @@ const Auth = ({ onAuth }) => {
     };
   }, []);
 
-  const handleRequestOtp = async (e) => {
+  const handleAccessAccount = async (e) => {
     e.preventDefault();
-    if (!email || !deviceId) return;
+    if (!userId || userId.length < 5 || !deviceId) {
+      setIsError(true);
+      setStatus("User ID must be at least 5 characters.");
+      return;
+    }
 
     setLoading(true);
     setIsError(false);
-    setStatus("Requesting security passcode...");
+    setStatus("Establishing secure session...");
 
     try {
-      const res = await fetch("/api/endpoints", {
+      // Step 1: Create user if they don't exist
+      const createRes = await fetch("/api/endpoints", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action: "requestEmailOtp",
-          deviceId,
-          email: email.toLowerCase().trim()
+          action: "createUser",
+          userId: userId.toLowerCase().trim()
         })
       });
 
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || data.message || "Failed to trigger security code");
+      const createData = await createRes.json();
+      // If code is NOT 155106 (already exists), and not ok, throw error
+      if (!createRes.ok && createData.code !== 155106) {
+        throw new Error(createData.message || "Failed to create user record");
       }
 
-      setDeviceToken(data.deviceToken);
-      setDeviceEncryptionKey(data.deviceEncryptionKey);
-      setOtpToken(data.otpToken);
-
-      // Configure SDK session
-      sdkRef.current.updateConfigs({
-        appSettings: { appId },
-        loginConfigs: {
-          deviceToken: data.deviceToken,
-          deviceEncryptionKey: data.deviceEncryptionKey,
-          otpToken: data.otpToken,
-          email: { email: email.toLowerCase().trim() }
-        }
+      // Step 2: Get user short-lived session token
+      setStatus("Generating secure session tokens...");
+      const tokenRes = await fetch("/api/endpoints", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "getUserToken",
+          userId: userId.toLowerCase().trim()
+        })
       });
 
-      setStep(2);
-      setStatus("A one-time passcode was sent to your email!");
-      setIsError(false);
-    } catch (err) {
-      console.error(err);
-      setIsError(true);
-      setStatus(err.message);
-    } finally {
-      setLoading(false);
-    }
-  };
+      const tokenData = await tokenRes.json();
+      if (!tokenRes.ok) {
+        throw new Error(tokenData.message || "Failed to retrieve user token");
+      }
 
-  const handleVerifyOtp = () => {
-    if (!deviceToken || !deviceEncryptionKey || !otpToken) return;
-    setIsError(false);
-    setStatus("Opening secure verification...");
-    setLoading(true);
+      const userToken = tokenData.userToken;
+      const encryptionKey = tokenData.encryptionKey;
+      setLoginResult({ userToken, encryptionKey });
 
-    // Circle handles the secure hosted verification page
-    sdkRef.current.verifyOtp();
-  };
-
-  const handleInitializeOrFetch = async () => {
-    if (!loginResult?.userToken) return;
-    setLoading(true);
-    setIsError(false);
-    setStatus("Syncing wallet details...");
-
-    try {
-      const res = await fetch("/api/endpoints", {
+      // Step 3: Initialize user (to check if they need a wallet)
+      setStatus("Syncing wallet status on Ethereum Sepolia...");
+      const initRes = await fetch("/api/endpoints", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "initializeUser",
-          userToken: loginResult.userToken
+          userToken
         })
       });
 
-      const data = await res.json();
-      
-      if (!res.ok) {
-        // Code 155106 means the user is already initialized!
-        if (data.code === 155106) {
-          await loadExistingWallets();
+      const initData = await initRes.json();
+
+      if (!initRes.ok) {
+        // If they are already initialized (code 155106), fetch existing wallet directly!
+        if (initData.code === 155106) {
+          await loadExistingWallets(userToken);
           return;
         }
-        throw new Error(data.message || "Failed to initialize user");
+        throw new Error(initData.message || "Initialization failed");
       }
 
-      // If user is new, we get a challengeId to execute wallet creation!
-      setChallengeId(data.challengeId);
-      setStep(4);
-      setStatus("Security setup ready. Let's create your wallet!");
+      // If new user initialized successfully, we got a challengeId!
+      setChallengeId(initData.challengeId);
+      setStep(2);
+      setStatus("Security PIN setup required for this new account.");
     } catch (err) {
       console.error(err);
       setIsError(true);
-      setStatus(err.message);
+      setStatus(err.message || "Authentication process encountered an error.");
     } finally {
       setLoading(false);
     }
   };
 
-  const loadExistingWallets = async () => {
+  const loadExistingWallets = async (userToken) => {
     try {
       const res = await fetch("/api/endpoints", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           action: "listWallets",
-          userToken: loginResult.userToken
+          userToken
         })
       });
 
@@ -194,30 +155,31 @@ const Auth = ({ onAuth }) => {
 
       const wallets = data.wallets || [];
       if (wallets.length > 0) {
+        // Log them in!
         onAuth({
           walletId: wallets[0].id,
           address: wallets[0].address,
-          userToken: loginResult.userToken,
-          encryptionKey: loginResult.encryptionKey,
-          email
+          userToken,
+          encryptionKey: loginResult?.encryptionKey || '',
+          email: userId // reuse userId as display name/identifier
         });
       } else {
-        // Highly unlikely to have initialized user but 0 wallets
-        setStatus("No wallets found. Initializing creation...");
-        setStep(4);
+        // This is extremely rare, but just in case
+        setIsError(true);
+        setStatus("No wallets found. Contact support.");
       }
     } catch (err) {
       console.error(err);
       setIsError(true);
-      setStatus(err.message);
+      setStatus("Error loading wallets: " + err.message);
     }
   };
 
-  const handleCreateWallet = () => {
-    if (!challengeId || !loginResult) return;
+  const handleSetupPin = () => {
+    if (!challengeId || !loginResult || !sdkRef.current) return;
     setLoading(true);
     setIsError(false);
-    setStatus("Executing secure wallet setup challenge...");
+    setStatus("Launching secure PIN configuration popup...");
 
     sdkRef.current.setAuthentication({
       userToken: loginResult.userToken,
@@ -226,17 +188,17 @@ const Auth = ({ onAuth }) => {
 
     sdkRef.current.execute(challengeId, async (error) => {
       if (error) {
-        console.error(error);
+        console.error("PIN Challenge failed:", error);
         setIsError(true);
-        setStatus("Secure challenge execution failed: " + error.message);
+        setStatus("PIN setup failed: " + error.message);
         setLoading(false);
         return;
       }
 
-      // Success! Give Circle indexer a few seconds to index the new wallet
-      setStatus("Wallet created! Fetching your new address...");
-      await new Promise(r => setTimeout(r, 3000));
-      await loadExistingWallets();
+      // PIN setup completed successfully!
+      setStatus("PIN configured successfully! Fetching your new Sepolia address...");
+      await new Promise(r => setTimeout(r, 3500));
+      await loadExistingWallets(loginResult.userToken);
     });
   };
 
@@ -250,34 +212,35 @@ const Auth = ({ onAuth }) => {
       </div>
 
       <div className="mb-6">
-        <h2 className="mb-2">Secure User Wallet</h2>
-        <p className="text-muted">Circle User-Controlled Smart Wallet powered by Email OTP.</p>
+        <h2 className="mb-2">User-Controlled PIN Wallet</h2>
+        <p className="text-muted">Direct user-owned keys authorized by a secure 6-digit PIN.</p>
       </div>
 
       {step === 1 && (
-        <form onSubmit={handleRequestOtp}>
+        <form onSubmit={handleAccessAccount}>
           <div className="input-group">
-            <label className="input-label">Enter your Email</label>
+            <label className="input-label">Username / User ID</label>
             <div style={{ position: 'relative' }}>
-              <Mail size={18} style={{ position: 'absolute', left: '16px', top: '15px', color: 'var(--text-muted)' }} />
+              <User size={18} style={{ position: 'absolute', left: '16px', top: '15px', color: 'var(--text-muted)' }} />
               <input
-                type="email"
+                type="text"
                 className="input-field"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                placeholder="Enter unique username (min 5 chars)"
+                value={userId}
+                onChange={(e) => setUserId(e.target.value)}
                 required
                 disabled={loading || !sdkReady}
                 style={{ paddingLeft: '48px' }}
+                minLength={5}
               />
             </div>
           </div>
 
           <button type="submit" className="btn-primary mt-6" disabled={loading || !sdkReady}>
             {loading ? (
-              <><Loader2 className="spinner" size={20} /> Requesting OTP...</>
+              <><Loader2 className="spinner" size={20} /> Accessing Secure Vault...</>
             ) : (
-              <>Send Verification Code <ArrowRight size={20} /></>
+              <>Access Wallet <ArrowRight size={20} /></>
             )}
           </button>
         </form>
@@ -286,16 +249,16 @@ const Auth = ({ onAuth }) => {
       {step === 2 && (
         <div>
           <div className="flex flex-col items-center justify-center p-6 bg-accent/5 rounded-2xl border border-accent/10 mb-6">
-            <Mail size={48} className="text-accent mb-3 spinner" />
-            <h4 className="font-semibold text-lg mb-1">Check Your Inbox</h4>
-            <p className="text-sm text-muted">We sent a security code to {email}</p>
+            <KeyRound size={48} className="text-accent mb-3 spinner" />
+            <h4 className="font-semibold text-lg mb-1">Set Authorization PIN</h4>
+            <p className="text-sm text-muted">A hosted, secure window will guide you to set up your 6-digit PIN and Recovery Questions.</p>
           </div>
 
-          <button className="btn-primary mt-4 w-full" onClick={handleVerifyOtp} disabled={loading}>
+          <button className="btn-primary mt-4 w-full" onClick={handleSetupPin} disabled={loading}>
             {loading ? (
-              <><Loader2 className="spinner" size={20} /> Verifying...</>
+              <><Loader2 className="spinner" size={20} /> Waiting for Setup...</>
             ) : (
-              <>Verify Security Code</>
+              <>Configure Secure PIN</>
             )}
           </button>
 
@@ -304,43 +267,7 @@ const Auth = ({ onAuth }) => {
             onClick={() => setStep(1)} 
             disabled={loading}
           >
-            Change Email
-          </button>
-        </div>
-      )}
-
-      {step === 3 && (
-        <div>
-          <div className="flex flex-col items-center justify-center p-6 bg-emerald-500/5 rounded-2xl border border-emerald-500/10 mb-6">
-            <CheckCircle2 size={48} className="text-emerald-500 mb-3" />
-            <h4 className="font-semibold text-lg mb-1">Authenticated!</h4>
-            <p className="text-sm text-muted">Security verification complete.</p>
-          </div>
-
-          <button className="btn-primary mt-4 w-full" onClick={handleInitializeOrFetch} disabled={loading}>
-            {loading ? (
-              <><Loader2 className="spinner" size={20} /> Syncing Wallets...</>
-            ) : (
-              <>Enter PayX Dashboard</>
-            )}
-          </button>
-        </div>
-      )}
-
-      {step === 4 && (
-        <div>
-          <div className="flex flex-col items-center justify-center p-6 bg-accent/5 rounded-2xl border border-accent/10 mb-6">
-            <ShieldCheck size={48} className="text-accent mb-3" />
-            <h4 className="font-semibold text-lg mb-1">Create Web3 Wallet</h4>
-            <p className="text-sm text-muted">Let's generate your secure on-chain wallet.</p>
-          </div>
-
-          <button className="btn-primary mt-4 w-full" onClick={handleCreateWallet} disabled={loading}>
-            {loading ? (
-              <><Loader2 className="spinner" size={20} /> Configuring...</>
-            ) : (
-              <>Initialize Secure Wallet</>
-            )}
+            Go Back
           </button>
         </div>
       )}
