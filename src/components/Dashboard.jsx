@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
 import { LogOut, Send, QrCode, Wallet, Users } from 'lucide-react';
+import { W3SSdk } from '@circle-fin/w3s-pw-web-sdk';
 import SendModal from './SendModal';
 import ReceiveModal from './ReceiveModal';
-import { History as HistoryIcon } from 'lucide-react';
 
-const Dashboard = ({ wallet, balance, setBalance, onLogout, onNavigate }) => {
+const appId = import.meta.env.NEXT_PUBLIC_CIRCLE_APP_ID;
+
+const Dashboard = ({ wallet, balance, setBalance, onLogout, onNavigate, fetchBalance }) => {
   const [showSendModal, setShowSendModal] = useState(false);
   const [showReceiveModal, setShowReceiveModal] = useState(false);
+  const [sending, setSending] = useState(false);
   
   const [friends] = useState([
     { name: 'Alice', address: '0x71C...976F' },
@@ -20,11 +23,14 @@ const Dashboard = ({ wallet, balance, setBalance, onLogout, onNavigate }) => {
       return false;
     }
 
+    setSending(true);
     try {
-      const res = await fetch('/api/send-transaction', {
+      const res = await fetch('/api/endpoints', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          action: 'createTransfer',
+          userToken: wallet.userToken,
           walletId: wallet.walletId,
           destinationAddress: targetAddress,
           amount: amount.toString()
@@ -32,15 +38,41 @@ const Dashboard = ({ wallet, balance, setBalance, onLogout, onNavigate }) => {
       });
       
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      if (!res.ok) throw new Error(data.error || "Failed to create transfer challenge");
 
-      console.log("Circle Transaction ID:", data.transactionId);
-      alert("Transfer initiated successfully via Circle API!\nTxID: " + data.transactionId);
-      
-      return true;
+      const challengeId = data.challengeId;
+
+      // Initialize SDK and run the challenge (PIN/OTP Verification)
+      const sdk = new W3SSdk({
+        appSettings: { appId }
+      });
+
+      sdk.setAuthentication({
+        userToken: wallet.userToken,
+        encryptionKey: wallet.encryptionKey
+      });
+
+      return new Promise((resolve) => {
+        sdk.execute(challengeId, (error) => {
+          setSending(false);
+          if (error) {
+            console.error("Execute transfer failed:", error);
+            alert("Transfer failed: " + error.message);
+            resolve(false);
+            return;
+          }
+
+          alert("Transfer completed successfully! 🎉");
+          setTimeout(() => {
+            fetchBalance();
+          }, 3000);
+          resolve(true);
+        });
+      });
     } catch (err) {
       console.error(err);
       alert("Send failed: " + err.message);
+      setSending(false);
       return false;
     }
   };
@@ -56,29 +88,26 @@ const Dashboard = ({ wallet, balance, setBalance, onLogout, onNavigate }) => {
           <button className="btn-secondary" style={{ padding: '0.5rem' }} onClick={() => onNavigate('faucet')} title="Faucet">
             Faucet
           </button>
-          <button className="btn-secondary" style={{ padding: '0.5rem' }} onClick={() => onNavigate('history')} title="History">
-            <HistoryIcon size={16} />
-          </button>
           <button className="btn-secondary" style={{ padding: '0.5rem' }} onClick={onLogout} title="Logout">
             <LogOut size={16} />
           </button>
         </div>
       </div>
 
-      <div className="balance-card">
+      <div className="balance-card animate-pulse-subtle">
         <div className="text-muted font-semibold">Total Balance</div>
         <div className="balance-amount">
           <span className="balance-currency">USDC</span>
           {balance}
         </div>
-        <div className="text-sm text-muted">Dev-Controlled • {wallet.address.slice(0,6)}...{wallet.address.slice(-4)}</div>
+        <div className="text-sm text-muted">User-Controlled • {wallet.address.slice(0,6)}...{wallet.address.slice(-4)}</div>
       </div>
 
       <div className="action-buttons">
-        <button className="btn-primary" onClick={() => setShowSendModal(true)}>
-          <Send size={18} /> Send
+        <button className="btn-primary" onClick={() => setShowSendModal(true)} disabled={sending}>
+          {sending ? 'Processing...' : <><Send size={18} /> Send</>}
         </button>
-        <button className="btn-secondary" onClick={() => setShowReceiveModal(true)}>
+        <button className="btn-secondary" onClick={() => setShowReceiveModal(true)} disabled={sending}>
           <QrCode size={18} /> Receive
         </button>
       </div>

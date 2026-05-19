@@ -23,7 +23,7 @@ const Faucet = ({ wallet, balance, onBack }) => {
 
       <div className="text-center mb-8">
         <Droplet size={48} className="mx-auto mb-4" style={{ color: 'var(--accent)', display: 'block', margin: '0 auto 1rem auto' }} />
-        <p className="text-muted mb-4">Because you are using a secure Developer-Controlled Circle Wallet on the public testnet, you need real testnet USDC from the official Circle Faucet.</p>
+        <p className="text-muted mb-4">Because you are using a secure User-Controlled Circle Wallet on the public testnet, you need real testnet USDC from the official Circle Faucet.</p>
         
         <div className="p-4 mb-4" style={{ background: 'rgba(255,255,255,0.05)', borderRadius: '12px', wordBreak: 'break-all' }}>
           <div className="text-sm text-muted mb-1">Your Wallet Address:</div>
