@@ -4,16 +4,22 @@ import Dashboard from './components/Dashboard';
 import Faucet from './components/Faucet';
 
 function App() {
-  const [wallet, setWallet] = useState(null); // { walletId, address, userToken, encryptionKey, email }
+  const [wallet, setWallet] = useState(null); // { walletId, address, userToken, encryptionKey, email, customApiKey, customAppId }
   const [balance, setBalance] = useState("0.00");
   const [currentView, setCurrentView] = useState('auth');
 
-  const fetchBalance = async (walletId, userToken) => {
+  const fetchBalance = async (walletId, userToken, customApiKey) => {
     if (!walletId || !userToken) return;
     try {
+      const activeApiKey = customApiKey || wallet?.customApiKey || localStorage.getItem("payx_custom_api_key");
+      const headers = { "Content-Type": "application/json" };
+      if (activeApiKey) {
+        headers["x-circle-api-key"] = activeApiKey;
+      }
+
       const res = await fetch("/api/endpoints", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           action: "getTokenBalance",
           userToken,
@@ -44,7 +50,7 @@ function App() {
         if (walletData && walletData.walletId && walletData.userToken) {
           setWallet(walletData);
           setCurrentView('dashboard');
-          fetchBalance(walletData.walletId, walletData.userToken);
+          fetchBalance(walletData.walletId, walletData.userToken, walletData.customApiKey);
         }
       }
     } catch (err) {
@@ -55,7 +61,7 @@ function App() {
   const handleAuth = (walletData) => {
     setWallet(walletData);
     localStorage.setItem("payx_current_wallet", JSON.stringify(walletData));
-    fetchBalance(walletData.walletId, walletData.userToken);
+    fetchBalance(walletData.walletId, walletData.userToken, walletData.customApiKey);
     setCurrentView('dashboard');
   };
 
@@ -69,7 +75,9 @@ function App() {
   // Poll balance updates while on the dashboard
   useEffect(() => {
     if (wallet && currentView === 'dashboard') {
-      const interval = setInterval(() => fetchBalance(wallet.walletId, wallet.userToken), 8000);
+      const interval = setInterval(() => {
+        fetchBalance(wallet.walletId, wallet.userToken, wallet.customApiKey);
+      }, 8000);
       return () => clearInterval(interval);
     }
   }, [wallet, currentView]);
@@ -85,7 +93,7 @@ function App() {
           setBalance={setBalance}
           onLogout={handleLogout} 
           onNavigate={setCurrentView}
-          fetchBalance={() => fetchBalance(wallet.walletId, wallet.userToken)}
+          fetchBalance={() => fetchBalance(wallet.walletId, wallet.userToken, wallet.customApiKey)}
         />
       ) : currentView === 'faucet' ? (
         <Faucet 

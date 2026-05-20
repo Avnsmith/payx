@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { W3SSdk } from '@circle-fin/w3s-pw-web-sdk';
-import { Wallet, ArrowRight, Loader2, KeyRound, User, UserPlus, LogIn } from 'lucide-react';
+import { Wallet, ArrowRight, Loader2, KeyRound, User, UserPlus, LogIn, Settings, Eye, EyeOff } from 'lucide-react';
 
-const appId = "ff030750-f8da-5838-885a-c8b46b4cbad0";
+const DEFAULT_APP_ID = "ff030750-f8da-5838-885a-c8b46b4cbad0";
+const DEFAULT_API_KEY = "TEST_API_KEY:0f37606e6ee9d0350c6eeb26fc22b106:ced0c91d5191ce66c81136d1d2150fee";
 
 const Auth = ({ onAuth }) => {
   const sdkRef = useRef(null);
@@ -10,29 +11,51 @@ const Auth = ({ onAuth }) => {
   const [activeTab, setActiveTab] = useState('signin'); // 'signin' or 'signup'
   const [userId, setUserId] = useState('');
   const [deviceId, setDeviceId] = useState('');
-  const [step, setStep] = useState(1); // 1: Form Entry, 2: PIN Setup, 3: Loading/Success
+  const [step, setStep] = useState(1); // 1: Form Entry, 2: PIN Setup
   const [loading, setLoading] = useState(false);
   const [status, setStatus] = useState('');
   const [isError, setIsError] = useState(false);
 
+  // Developer Settings Panel State
+  const [showDevPanel, setShowDevPanel] = useState(false);
+  const [customApiKey, setCustomApiKey] = useState(DEFAULT_API_KEY);
+  const [customAppId, setCustomAppId] = useState(DEFAULT_APP_ID);
+  const [showApiKeyText, setShowApiKeyText] = useState(false);
+
   const [loginResult, setLoginResult] = useState(null); // { userToken, encryptionKey }
   const [challengeId, setChallengeId] = useState(null);
 
-  // Initialize Circle Web3 SDK on mount
+  // Load custom credentials on mount
+  useEffect(() => {
+    const savedApiKey = localStorage.getItem("payx_custom_api_key");
+    const savedAppId = localStorage.getItem("payx_custom_app_id");
+    if (savedApiKey) setCustomApiKey(savedApiKey);
+    if (savedAppId) setCustomAppId(savedAppId);
+  }, []);
+
+  // Sync custom credentials changes to localStorage
+  const handleSaveDevSettings = (apiKey, appIdVal) => {
+    setCustomApiKey(apiKey);
+    setCustomAppId(appIdVal);
+    localStorage.setItem("payx_custom_api_key", apiKey);
+    localStorage.setItem("payx_custom_app_id", appIdVal);
+  };
+
+  // Initialize Circle SDK using dynamic custom App ID
   useEffect(() => {
     let active = true;
+    setSdkReady(false);
 
     const init = async () => {
       try {
         const sdk = new W3SSdk({
-          appSettings: { appId }
+          appSettings: { appId: customAppId }
         });
 
         sdkRef.current = sdk;
         if (active) {
           setSdkReady(true);
           
-          // Get/generate Device ID for security
           let cachedId = localStorage.getItem("deviceId");
           if (!cachedId) {
             cachedId = await sdk.getDeviceId();
@@ -41,10 +64,10 @@ const Auth = ({ onAuth }) => {
           setDeviceId(cachedId);
         }
       } catch (err) {
-        console.error("Failed to initialize Circle SDK:", err);
+        console.error("Circle SDK initialization failure:", err);
         if (active) {
           setIsError(true);
-          setStatus("Failed to initialize secure environment");
+          setStatus("Varying App ID credentials. Verify Developer settings.");
         }
       }
     };
@@ -54,7 +77,7 @@ const Auth = ({ onAuth }) => {
     return () => {
       active = false;
     };
-  }, []);
+  }, [customAppId]);
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -66,17 +89,20 @@ const Auth = ({ onAuth }) => {
 
     setLoading(true);
     setIsError(false);
-    setStatus(activeTab === 'signup' ? "Creating your secure wallet vault..." : "Locating your account...");
+    setStatus(activeTab === 'signup' ? "Configuring user credentials..." : "Locating registered account...");
 
     try {
       const formattedUserId = userId.toLowerCase().trim();
+      const headers = { 
+        "Content-Type": "application/json",
+        "x-circle-api-key": customApiKey
+      };
 
       if (activeTab === 'signup') {
-        // --- SIGN UP FLOW ---
-        // 1. Create a new user record on Circle backend
+        // --- SIGN UP ---
         const createRes = await fetch("/api/endpoints", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify({
             action: "createUser",
             userId: formattedUserId
@@ -87,16 +113,15 @@ const Auth = ({ onAuth }) => {
         
         if (!createRes.ok) {
           if (createData.code === 155106 || createData.message?.includes("already exists")) {
-            throw new Error("This username is already taken. Please go to the Sign In tab!");
+            throw new Error("Username already exists. Please go to the Sign In tab!");
           }
           throw new Error(createData.message || "Failed to create user record");
         }
 
-        // 2. Fetch session tokens
-        setStatus("Generating secure registration tokens...");
+        setStatus("Generating session tokens...");
         const tokenRes = await fetch("/api/endpoints", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify({
             action: "getUserToken",
             userId: formattedUserId
@@ -108,11 +133,10 @@ const Auth = ({ onAuth }) => {
 
         setLoginResult({ userToken: tokenData.userToken, encryptionKey: tokenData.encryptionKey });
 
-        // 3. Initialize User to trigger PIN challenge
-        setStatus("Preparing secure PIN initialization challenge...");
+        setStatus("Generating secure PIN configuration challenge...");
         const initRes = await fetch("/api/endpoints", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify({
             action: "initializeUser",
             userToken: tokenData.userToken
@@ -120,17 +144,16 @@ const Auth = ({ onAuth }) => {
         });
 
         const initData = await initRes.json();
-        if (!initRes.ok) throw new Error(initData.message || "Failed to prepare setup challenge");
+        if (!initRes.ok) throw new Error(initData.message || "Failed to initiate challenge setup");
 
         setChallengeId(initData.challengeId);
         setStep(2);
         setStatus("Launch PIN setup below to secure your wallet.");
       } else {
-        // --- SIGN IN FLOW ---
-        // 1. Try to fetch token directly (will error if user does not exist)
+        // --- SIGN IN ---
         const tokenRes = await fetch("/api/endpoints", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify({
             action: "getUserToken",
             userId: formattedUserId
@@ -144,11 +167,10 @@ const Auth = ({ onAuth }) => {
 
         setLoginResult({ userToken: tokenData.userToken, encryptionKey: tokenData.encryptionKey });
 
-        // 2. Initialize or fetch existing wallet
-        setStatus("Verifying secure security parameters...");
+        setStatus("Syncing wallet metrics...");
         const initRes = await fetch("/api/endpoints", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify({
             action: "initializeUser",
             userToken: tokenData.userToken
@@ -158,7 +180,6 @@ const Auth = ({ onAuth }) => {
         const initData = await initRes.json();
 
         if (!initRes.ok) {
-          // 155106 means they are already initialized (wallet setup complete!) -> Load wallets directly!
           if (initData.code === 155106) {
             setStatus("Loading secure smart wallet...");
             await loadExistingWallets(tokenData.userToken, tokenData.encryptionKey);
@@ -167,10 +188,9 @@ const Auth = ({ onAuth }) => {
           throw new Error(initData.message || "Authentication failed");
         }
 
-        // If they registered but never completed the challenge setup (rare)
         setChallengeId(initData.challengeId);
         setStep(2);
-        setStatus("You registered but didn't finish PIN setup. Configure it now!");
+        setStatus("Initialization required. Setup secure PIN!");
       }
     } catch (err) {
       console.error(err);
@@ -185,7 +205,10 @@ const Auth = ({ onAuth }) => {
     try {
       const res = await fetch("/api/endpoints", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-circle-api-key": customApiKey
+        },
         body: JSON.stringify({
           action: "listWallets",
           userToken
@@ -202,7 +225,9 @@ const Auth = ({ onAuth }) => {
           address: wallets[0].address,
           userToken,
           encryptionKey,
-          email: userId.toLowerCase().trim()
+          email: userId.toLowerCase().trim(),
+          customApiKey,
+          customAppId
         });
       } else {
         setIsError(true);
@@ -235,7 +260,7 @@ const Auth = ({ onAuth }) => {
         return;
       }
 
-      setStatus("PIN configured successfully! Spawning your wallet address on Ethereum Sepolia...");
+      setStatus("PIN configured successfully! Fetching your new address...");
       await new Promise(r => setTimeout(r, 3500));
       await loadExistingWallets(loginResult.userToken, loginResult.encryptionKey);
     });
@@ -243,6 +268,30 @@ const Auth = ({ onAuth }) => {
 
   return (
     <div className="main-card glass-panel text-center">
+      {/* Settings Toggle Trigger */}
+      <button 
+        onClick={() => setShowDevPanel(!showDevPanel)}
+        style={{
+          position: 'absolute',
+          right: '24px',
+          top: '24px',
+          color: showDevPanel ? 'var(--accent)' : 'var(--text-secondary)',
+          zIndex: 10,
+          background: 'none',
+          border: 'none',
+          padding: '8px',
+          borderRadius: '50%',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          transition: 'all 0.25s ease'
+        }}
+        title="Developer Keys Config"
+      >
+        <Settings size={20} className={showDevPanel ? 'spinner' : ''} />
+      </button>
+
       <div className="app-header" style={{ justifyContent: 'center' }}>
         <div className="logo" style={{ fontSize: '2rem' }}>
           <Wallet size={32} />
@@ -250,10 +299,54 @@ const Auth = ({ onAuth }) => {
         </div>
       </div>
 
-      <div className="mb-6">
-        <h2 className="mb-2">User-Controlled PIN Wallet</h2>
-        <p className="text-muted">Direct user-owned keys authorized by a secure 6-digit PIN.</p>
-      </div>
+      {/* Developer Dynamic Keys Console Panel */}
+      {showDevPanel ? (
+        <div className="text-left mb-6 p-4 rounded-xl border border-white/10 bg-white/5 animate-slideUp">
+          <div className="flex justify-between items-center mb-3">
+            <h4 className="font-semibold text-sm text-gradient">Developer Keys Config</h4>
+          </div>
+          
+          <div className="input-group mb-3">
+            <label className="input-label text-xs">Circle Sandbox API Key</label>
+            <div style={{ position: 'relative' }}>
+              <input 
+                type={showApiKeyText ? "text" : "password"}
+                className="input-field text-xs"
+                style={{ paddingRight: '40px', paddingLeft: '12px', paddingBottom: '8px', paddingTop: '8px' }}
+                value={customApiKey}
+                onChange={(e) => handleSaveDevSettings(e.target.value, customAppId)}
+                placeholder="Enter Circle Developer API Key"
+              />
+              <button 
+                type="button"
+                onClick={() => setShowApiKeyText(!showApiKeyText)}
+                style={{
+                  position: 'absolute', right: '10px', top: '10px', background: 'none', border: 'none', color: 'var(--text-secondary)'
+                }}
+              >
+                {showApiKeyText ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+          </div>
+
+          <div className="input-group mb-0">
+            <label className="input-label text-xs">Circle App ID</label>
+            <input 
+              type="text"
+              className="input-field text-xs"
+              style={{ paddingLeft: '12px', paddingBottom: '8px', paddingTop: '8px' }}
+              value={customAppId}
+              onChange={(e) => handleSaveDevSettings(customApiKey, e.target.value)}
+              placeholder="Enter Circle App ID"
+            />
+          </div>
+        </div>
+      ) : (
+        <div className="mb-6">
+          <h2 className="mb-2">User-Controlled PIN Wallet</h2>
+          <p className="text-muted">Direct user-owned keys authorized by a secure 6-digit PIN.</p>
+        </div>
+      )}
 
       {step === 1 && (
         <>

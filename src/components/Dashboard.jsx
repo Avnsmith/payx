@@ -4,7 +4,7 @@ import { W3SSdk } from '@circle-fin/w3s-pw-web-sdk';
 import SendModal from './SendModal';
 import ReceiveModal from './ReceiveModal';
 
-const appId = "ff030750-f8da-5838-885a-c8b46b4cbad0";
+const DEFAULT_APP_ID = "ff030750-f8da-5838-885a-c8b46b4cbad0";
 
 const Dashboard = ({ wallet, balance, setBalance, onLogout, onNavigate, fetchBalance }) => {
   const [showSendModal, setShowSendModal] = useState(false);
@@ -23,11 +23,19 @@ const Dashboard = ({ wallet, balance, setBalance, onLogout, onNavigate, fetchBal
       return false;
     }
 
+    const activeAppId = wallet.customAppId || localStorage.getItem("payx_custom_app_id") || DEFAULT_APP_ID;
+    const activeApiKey = wallet.customApiKey || localStorage.getItem("payx_custom_api_key");
+
     setSending(true);
     try {
+      const headers = { 'Content-Type': 'application/json' };
+      if (activeApiKey) {
+        headers['x-circle-api-key'] = activeApiKey;
+      }
+
       const res = await fetch('/api/endpoints', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           action: 'createTransfer',
           userToken: wallet.userToken,
@@ -42,9 +50,9 @@ const Dashboard = ({ wallet, balance, setBalance, onLogout, onNavigate, fetchBal
 
       const challengeId = data.challengeId;
 
-      // Initialize SDK and run the challenge (PIN/OTP Verification)
+      // Initialize SDK dynamically using user-configured App ID
       const sdk = new W3SSdk({
-        appSettings: { appId }
+        appSettings: { appId: activeAppId }
       });
 
       sdk.setAuthentication({

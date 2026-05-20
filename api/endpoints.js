@@ -4,17 +4,20 @@ import { v4 as uuidv4 } from 'uuid';
 dotenv.config();
 
 const CIRCLE_BASE_URL = process.env.NEXT_PUBLIC_CIRCLE_BASE_URL ?? "https://api.circle.com";
-const CIRCLE_API_KEY = process.env.CIRCLE_API_KEY ?? "TEST_API_KEY:0f37606e6ee9d0350c6eeb26fc22b106:ced0c91d5191ce66c81136d1d2150fee";
+const FALLBACK_API_KEY = "TEST_API_KEY:0f37606e6ee9d0350c6eeb26fc22b106:ced0c91d5191ce66c81136d1d2150fee";
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).send('Method Not Allowed');
 
   try {
-    const { action, ...params } = req.body ?? {};
+    const { action, customApiKey, ...params } = req.body ?? {};
 
     if (!action) {
       return res.status(400).json({ error: "Missing action" });
     }
+
+    // Support dynamic custom API Key passed via headers or request body
+    const CIRCLE_API_KEY = req.headers['x-circle-api-key'] || customApiKey || process.env.CIRCLE_API_KEY || FALLBACK_API_KEY;
 
     if (!CIRCLE_API_KEY) {
       return res.status(500).json({ error: "Circle API Key is not configured" });
@@ -59,32 +62,6 @@ export default async function handler(req, res) {
           },
           body: JSON.stringify({
             userId,
-          }),
-        });
-
-        const data = await response.json();
-        if (!response.ok) {
-          return res.status(response.status).json(data);
-        }
-        return res.status(200).json(data.data);
-      }
-
-      case "requestEmailOtp": {
-        const { deviceId, email } = params;
-        if (!deviceId || !email) {
-          return res.status(400).json({ error: "Missing deviceId or email" });
-        }
-
-        const response = await fetch(`${CIRCLE_BASE_URL}/v1/w3s/users/email/token`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${CIRCLE_API_KEY}`,
-          },
-          body: JSON.stringify({
-            idempotencyKey: uuidv4(),
-            deviceId,
-            email,
           }),
         });
 
@@ -173,7 +150,7 @@ export default async function handler(req, res) {
           return res.status(400).json({ error: "Missing required parameters for transfer" });
         }
 
-        // Fetch balances first to obtain the USDC tokenId
+        // Fetch balances first to obtain decimals
         const balanceResponse = await fetch(`${CIRCLE_BASE_URL}/v1/w3s/wallets/${walletId}/balances`, {
           method: "GET",
           headers: {
@@ -196,7 +173,7 @@ export default async function handler(req, res) {
 
         const decimals = usdcBalance?.token?.decimals || 6;
         
-        // Calculate amount in the token's smallest unit (e.g. Wei)
+        // Calculate amount in Wei/smallest unit
         const amountInSmallestUnit = Math.floor(parseFloat(amount) * Math.pow(10, decimals)).toString();
 
         // Standard EVM contract execution for the custom USD contract
