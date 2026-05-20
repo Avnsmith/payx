@@ -194,11 +194,13 @@ export default async function handler(req, res) {
                t.token.name.includes('USDC')
         );
 
-        // Fallback to standard Sepolia USDC token ID if balance array is empty (for demo/mock purposes)
-        const tokenId = usdcBalance?.token?.id || "7a34e9e4-c5a4-4a47-a827-cbbef10e74f0";
+        const decimals = usdcBalance?.token?.decimals || 6;
+        
+        // Calculate amount in the token's smallest unit (e.g. Wei)
+        const amountInSmallestUnit = Math.floor(parseFloat(amount) * Math.pow(10, decimals)).toString();
 
-        // Initiate transfer which yields a challengeId
-        const response = await fetch(`${CIRCLE_BASE_URL}/v1/w3s/user/transactions/transfer`, {
+        // Standard EVM contract execution for the custom USD contract
+        const response = await fetch(`${CIRCLE_BASE_URL}/v1/w3s/user/transactions/contractExecution`, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -208,9 +210,9 @@ export default async function handler(req, res) {
           body: JSON.stringify({
             idempotencyKey: uuidv4(),
             walletId,
-            destinationAddress,
-            amounts: [amount],
-            tokenId: tokenId,
+            contractAddress: "0x3600000000000000000000000000000000000000",
+            abiFunctionSignature: "transfer(address,uint256)",
+            abiParameters: [destinationAddress, amountInSmallestUnit],
             fee: {
               type: 'level',
               config: {
