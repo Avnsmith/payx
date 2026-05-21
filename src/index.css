@@ -398,3 +398,45 @@ input {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+/* Upgraded Portal Dashboard Classes */
+.active-tab {
+  background: rgba(56, 189, 248, 0.1) !important;
+  color: #ffffff !important;
+  border-color: rgba(56, 189, 248, 0.4) !important;
+}
+
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-slideUp {
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scaleIn {
+  animation: scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.text-decoration-none {
+  text-decoration: none;
+}
+

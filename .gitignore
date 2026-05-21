@@ -28,3 +28,8 @@ dist-ssr
 *.dat
 vercel-dev.log
 
+# SQLite runtime database
+data.db
+data.db-shm
+data.db-wal
+
